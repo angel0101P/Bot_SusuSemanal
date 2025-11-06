@@ -2,10 +2,11 @@ import os
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler
-import psycopg2
+import psycopg  # Cambiado de psycopg2 a psycopg (psycopg3)
 from datetime import datetime, timedelta
 import json
 import telegram
+from dotenv import load_dotenv  # Añadido para cargar variables de entorno
 
 # Configuración
 # Cargar variables de entorno
@@ -16,9 +17,9 @@ TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 DATABASE_URL = os.getenv('DATABASE_URL')
 ADMIN_ID = int(os.getenv('ADMIN_ID', '5908252094'))
 
-# Conexión a la base de datos
+# Conexión a la base de datos - CAMBIO PARA PSYCOPG3
 def get_db_connection():
-    return psycopg2.connect(DATABASE_URL)
+    return psycopg.connect(DATABASE_URL)
 
 def reparar_tablas():
     """Reparar tablas existentes agregando columnas faltantes"""
@@ -3556,5 +3557,4 @@ def main():
         time.sleep(5)
 
 if __name__ == "__main__":
-
     main()
