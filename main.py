@@ -8,9 +8,13 @@ import json
 import telegram
 
 # Configuración
-logging.basicConfig(level=logging.INFO)
-TOKEN = "8231542751:AAGVqPTw5PPis8b04NL6cjlmL-3xZUZjtyc"
-DATABASE_URL = "postgresql://neondb_owner:npg_RXht4IAsuKH7@ep-spring-feather-acznkqmi-pooler.sa-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+# Cargar variables de entorno
+load_dotenv()
+
+# Configuración desde variables de entorno
+TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+DATABASE_URL = os.getenv('DATABASE_URL')
+ADMIN_ID = int(os.getenv('ADMIN_ID', '5908252094'))
 
 # Conexión a la base de datos
 def get_db_connection():
@@ -3552,4 +3556,5 @@ def main():
         time.sleep(5)
 
 if __name__ == "__main__":
+
     main()
