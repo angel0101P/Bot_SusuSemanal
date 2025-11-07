@@ -2321,7 +2321,7 @@ async def borrar_pago(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Error al eliminar el pago")
 
 async def borrarusuario(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Elimina un usuario y sus datos relacionados (admin)"""
+    """Elimina un usuario y TODOS sus datos relacionados (admin)"""
     if update.effective_user.id != 5908252094:
         await update.message.reply_text("❌ No tienes permisos de administrador")
         return
@@ -2345,12 +2345,21 @@ async def borrarusuario(update: Update, context: ContextTypes.DEFAULT_TYPE):
         first_name, last_name = usuario
         nombre_completo = f"{first_name or ''} {last_name or ''}".strip()
         
-        # 2. Contar datos relacionados
+        # 2. Contar datos relacionados para mostrar en confirmación
         cursor.execute("SELECT COUNT(*) FROM planes_pago WHERE user_id = %s", (user_id,))
         planes_count = cursor.fetchone()[0]
         
         cursor.execute("SELECT COUNT(*) FROM pagos WHERE user_id = %s", (user_id,))
         pagos_count = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM usuarios_puntos WHERE user_id = %s", (user_id,))
+        puntos_count = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM referidos WHERE user_id_referidor = %s OR user_id_referido = %s", (user_id, user_id))
+        referidos_count = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM puntos_historial WHERE user_id = %s", (user_id,))
+        historial_count = cursor.fetchone()[0]
         
         # 3. Mostrar confirmación con advertencia
         mensaje = (
@@ -2359,7 +2368,10 @@ async def borrarusuario(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🆔 **ID:** {user_id}\n\n"
             f"📊 **Datos a eliminar:**\n"
             f"• 📋 Planes activos: {planes_count}\n"
-            f"• 💳 Pagos registrados: {pagos_count}\n\n"
+            f"• 💳 Pagos registrados: {pagos_count}\n"
+            f"• ⭐ Datos de puntos: {puntos_count}\n"
+            f"• 👥 Referidos: {referidos_count}\n"
+            f"• 📈 Historial puntos: {historial_count}\n\n"
             f"⚠️ **Esta acción NO es reversible**\n\n"
             f"¿Estás seguro de eliminar este usuario y TODOS sus datos?"
         )
@@ -3043,10 +3055,18 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             conn = get_db_connection()
             cursor = conn.cursor()
             
-            # 1. Marcar planes como inactivos
+            # 1. Marcar planes como eliminados
             cursor.execute("UPDATE planes_pago SET estado = 'eliminado' WHERE user_id = %s", (user_id_eliminar,))
             
-            # 2. Eliminar usuario
+            # 2. ELIMINAR DATOS DE PUNTOS (NUEVO)
+            cursor.execute("DELETE FROM usuarios_puntos WHERE user_id = %s", (user_id_eliminar,))
+            cursor.execute("DELETE FROM puntos_historial WHERE user_id = %s", (user_id_eliminar,))
+            
+            # 3. Actualizar referidos (marcar como eliminados o mantener según prefieras)
+            cursor.execute("UPDATE referidos SET estado = 'eliminado' WHERE user_id_referidor = %s OR user_id_referido = %s", 
+                        (user_id_eliminar, user_id_eliminar))
+            
+            # 4. Eliminar usuario
             cursor.execute("DELETE FROM usuarios WHERE user_id = %s", (user_id_eliminar,))
             
             conn.commit()
@@ -3055,12 +3075,18 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(
                 f"✅ **Usuario eliminado completamente**\n\n"
                 f"🆔 **ID Usuario:** {user_id_eliminar}\n\n"
-                f"Se han eliminado todos los datos relacionados."
+                f"Se han eliminado TODOS los datos relacionados:\n"
+                f"• 👤 Datos de usuario\n"
+                f"• 📋 Planes de pago\n"
+                f"• ⭐ Sistema de puntos\n"
+                f"• 📈 Historial de puntos\n"
+                f"• 👥 Referidos asociados"
             )
             
         except Exception as e:
             print(f"❌ Error al eliminar usuario: {e}")
             await query.edit_message_text("❌ Error al eliminar el usuario")
+
     
     elif query.data.startswith("eliminar_usuario_no_"):
         await query.edit_message_text("❌ **Eliminación cancelada**\n\nEl usuario se mantiene activo.")
@@ -3580,5 +3606,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
