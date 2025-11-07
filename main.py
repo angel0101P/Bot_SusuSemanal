@@ -16,12 +16,6 @@ app = Flask(__name__)
 def health_check():
     return "Bot is running", 200
 
-def run_flask_app():
-    port = int(os.environ.get('PORT', 10000))
-    app.run(host='0.0.0.0', port=port)
-
-
-
 # Configuración
 # Cargar variables de entorno
 load_dotenv()
@@ -3533,28 +3527,18 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         print(f'❌ Error no manejado: {error}')
 
-def main():
-    """Función principal del bot con sistema completo de incremento"""
-    
-    # DEBUG: Verificar configuración primero
-    print(f"🔑 Verificando configuración...")
-    print(f"🔑 TOKEN: {'✅ PRESENTE' if TOKEN else '❌ FALTANTE'}")
-    print(f"🔑 DATABASE_URL: {'✅ PRESENTE' if DATABASE_URL else '❌ FALTANTE'}")
-    
-    if not TOKEN:
-        print("❌ ERROR: No se encontró TELEGRAM_BOT_TOKEN")
-        print("💡 Asegúrate de tener un archivo .env con tu token")
-        return
+
+def run_bot():
+    """Ejecuta el bot de Telegram en un hilo separado"""
+    print("🚀 CONFIGURANDO BOT DE TELEGRAM...")
     
     try:
-        # Inicializar base de datos
-        print("🗄️ Inicializando base de datos...")
-        init_db()
-        total_pagos, total_usuarios, total_productos, total_planes, semanas_config = verificar_base_datos()
-        print(f"🚀 Bot iniciado. Registros en BD - Pagos: {total_pagos}, Usuarios: {total_usuarios}, Productos: {total_productos}, Planes: {total_planes}, Semanas: {semanas_config}")
+        # Verificar que tenemos el token
+        if not TOKEN:
+            print("❌ ERROR: No hay token de Telegram")
+            return
         
-        # Configuración con timeouts aumentados
-        print("⚙️ Configurando aplicación de Telegram...")
+        # Configurar la aplicación
         application = (
             Application.builder()
             .token(TOKEN)
@@ -3565,6 +3549,8 @@ def main():
             .build()
         )
         
+        # AGREGAR TODOS LOS HANDLERS (copia esto exactamente)
+        
         # 1. Handlers de comandos básicos para usuarios
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CommandHandler("cancelar", cancelar))
@@ -3572,14 +3558,14 @@ def main():
         application.add_handler(CommandHandler("pagarealizado", pagarealizado))
         application.add_handler(CommandHandler("mistatus", mistatus))
         
-        # 🆕 2. Handlers para sistema de puntos y referidos
+        # 2. Handlers para sistema de puntos y referidos
         application.add_handler(CommandHandler("mispuntos", mispuntos))
         application.add_handler(CommandHandler("referidos", referidos))
         
-        # 3. Handlers para sistema de asignación administrativa
+        # 3. Handlers para sistema de asignación
         application.add_handler(CommandHandler("verasignaciones", ver_asignaciones))
         
-        # 4. Handlers modificados para productos (sin carrito)
+        # 4. Handlers para productos
         application.add_handler(CommandHandler("catalogo", catalogo_solo_lectura))
         application.add_handler(CommandHandler("misplanes", mis_planes_mejorado))
         
@@ -3593,126 +3579,73 @@ def main():
         application.add_handler(CommandHandler("pausarcontador", pausar_contador))
         application.add_handler(CommandHandler("reanudarcontador", reanudar_contador))
         application.add_handler(CommandHandler("configurarsemanas", configurar_semanas))
-        
-        # 🆕 6. Handlers para sistema de puntos (admin)
         application.add_handler(CommandHandler("rankingpuntos", ranking_puntos))
         application.add_handler(CommandHandler("verreferidos", ver_referidos_pendientes))
         application.add_handler(CommandHandler("vaciarranking", vaciar_ranking_puntos))
-        
-        # 7. NUEVOS HANDLERS PARA INCREMENTO DE SEMANAS
         application.add_handler(CommandHandler("incrementarsemana", incrementar_semana_manual))
         application.add_handler(CommandHandler("forzarincremento", forzar_incremento))
         
-        # 8. Handler para comandos dinámicos de asignación
+        # 6. Handler para comandos dinámicos
         application.add_handler(MessageHandler(
             filters.Regex(r'^\/(verimagen|confirmar|rechazar|borrar|borrarusuario|asignar|editarproducto|eliminarproducto|verpago|borrarpago|verificarreferido|rechazarreferido|verpuntosusuario)_\d+'),
             handle_dynamic_commands
         ))
         
-        # 9. Handler para mensajes normales
+        # 7. Handler para mensajes normales
         application.add_handler(MessageHandler(
             filters.TEXT & ~filters.COMMAND,
             handle_message
         ))
         
-        # 10. Handlers de archivos
+        # 8. Handlers de archivos
         application.add_handler(MessageHandler(filters.PHOTO, handle_image))
         application.add_handler(MessageHandler(filters.Document.IMAGE, handle_image))
         application.add_handler(MessageHandler(filters.Document.ALL, handle_all_documents))
         
-        # 11. Handler de botones de asignación
+        # 9. Handlers de botones
         application.add_handler(CallbackQueryHandler(button_handler_asignacion, pattern=r'^asignar_.*'))
-        
-        # 🆕 12. Handler de botones para sistema de puntos
         application.add_handler(CallbackQueryHandler(button_handler_puntos, pattern=r'^(compartir_codigo|ver_mis_puntos|ir_a_referidos|actualizar_puntos)$'))
-        
-        # 13. Handler de botones generales (para otros botones)
         application.add_handler(CallbackQueryHandler(button_handler))
         
-        # ✅ AGREGAR JOB PARA INCREMENTO AUTOMÁTICO (cada 7 días) CON VERIFICACIÓN
-        try:
-            if hasattr(application, 'job_queue') and application.job_queue is not None:
-                application.job_queue.run_repeating(
-                    incrementar_semanas_automatico, 
-                    interval=604800,  # 7 días en segundos
-                    first=10  # Empezar después de 10 segundos
-                )
-                print("✅ JobQueue configurado correctamente para incremento automático")
-                job_queue_status = "ACTIVADO (cada 7 días)"
-            else:
-                print("⚠️ JobQueue no disponible. El incremento automático no funcionará.")
-                print("💡 Ejecuta: pip install \"python-telegram-bot[job-queue]\"")
-                job_queue_status = "NO DISPONIBLE"
-        except Exception as e:
-            print(f"❌ Error al configurar JobQueue: {e}")
-            job_queue_status = "ERROR EN CONFIGURACIÓN"
-        
-        # ✅ Manejo de errores
+        # Manejo de errores
         application.add_error_handler(error_handler)
         
-        print("\n" + "="*60)
-        print("🤖 BOT DE PLANES DE PAGO - SISTEMA COMPLETO CON PUNTOS")
-        print("="*60)
-        print("📍 COMANDOS PARA USUARIOS:")
-        print("   /start - Registrarse en el sistema")
-        print("   /catalogo - Ver productos (solo lectura)")
-        print("   /misplanes - Ver plan asignado")
-        print("   /miperfil - Información personal")
-        print("   /mispuntos - Sistema de puntos")
-        print("   /referidos - Invitar amigos")
-        print("   /pagarealizado - Registrar pago")
-        print("   /mistatus - Estado de mis pagos")
-        print("\n📍 COMANDOS PARA ADMIN (5908252094):")
-        print("   /verasignaciones - Ver todas las asignaciones")
-        print("   /asignar_X - Asignar productos a usuario")
-        print("   /adminverproductos - Ver catálogo completo")
-        print("   /adminagregarproducto - Agregar producto")
-        print("   /verpagos - Ver pagos pendientes")
-        print("   /verpagostodos - Ver TODOS los pagos")
-        print("   /verusuarios - Ver todos los usuarios")
-        print("   /estadocontador - Estado del sistema")
-        print("   /pausarcontador - Pausar contador global")
-        print("   /reanudarcontador - Reanudar contador global")
-        print("   /configurarsemanas - Configurar semanas")
-        print("   /incrementarsemana - Incremento manual")
-        print("   /forzarincremento - Forzar incremento")
-        print("   /rankingpuntos - Ranking de puntos")
-        print("   /verreferidos - Referidos pendientes")
-        print("   /verpuntosusuario_ID - Puntos de usuario")
-        print("   /vaciarranking - Vaciar sistema de puntos")
-        print(f"\n🔄 INCREMENTO AUTOMÁTICO: {job_queue_status}")
-        print("🎛️  CONTROL ADMIN: Pausa/Reanuda contador")
-        print("⭐ SISTEMA DE PUNTOS: 2-5 pts por pago, 7 pts por referido")
-        print("💎 BENEFICIOS: 100 pts = 1 semana gym, 200 pts = 15% descuento")
-        print("="*60 + "\n")
+        print("✅ BOT CONFIGURADO CORRECTAMENTE")
+        print("📍 Escuchando mensajes de usuarios...")
         
-        # 🚀 INICIAR FLASK EN SEGUNDO PLANO (para Render)
-        print("🌐 Iniciando servidor web para Render...")
-        flask_thread = threading.Thread(target=run_flask_app, daemon=True)
-        flask_thread.start()
-        
-        # 🟢 INICIAR EL BOT DE TELEGRAM
-        print("🟢 INICIANDO BOT DE TELEGRAM...")
-        print("📍 El bot ahora está escuchando mensajes...")
-        print("📍 Los usuarios pueden escribir /start al bot")
+        # Iniciar el bot
         application.run_polling()
         
     except Exception as e:
-        print(f"❌ ERROR CRÍTICO al iniciar el bot: {e}")
-        print("\n🔧 SOLUCIONES POSIBLES:")
-        print("   1. Verifica tu conexión a Internet")
-        print("   2. Verifica que el TOKEN del bot sea correcto")
-        print("   3. Ejecuta: pip install \"python-telegram-bot[job-queue]\"")
-        print("   4. Reinicia Visual Studio Code")
-        print("   5. Verifica que la base de datos Neon esté activa")
-        
+        print(f"❌ ERROR en el bot: {e}")
         import traceback
         traceback.print_exc()
-        
-        # Esperar antes de salir para que el usuario pueda leer el mensaje
-        import time
-        time.sleep(10)
+
+def main():
+    """Función principal simplificada para Render"""
+    print("🎯 INICIANDO SERVICIO EN RENDER...")
+    
+    # 1. Inicializar base de datos
+    print("🗄️ Inicializando base de datos...")
+    init_db()
+    verificar_base_datos()
+    
+    # 2. Iniciar el bot en un hilo separado
+    print("🤖 Iniciando bot de Telegram...")
+    bot_thread = threading.Thread(target=run_bot, daemon=True)
+    bot_thread.start()
+    
+    # 3. Iniciar Flask (esto mantiene vivo el servicio en Render)
+    print("🌐 Iniciando servidor web...")
+    port = int(os.environ.get('PORT', 10000))
+    print(f"🟢 Servicio ejecutándose en puerto {port}")
+    
+    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
+
+
+
 
 if __name__ == "__main__":
     main()
+
 
