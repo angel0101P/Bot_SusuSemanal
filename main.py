@@ -3529,7 +3529,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def run_bot():
-    """Ejecuta el bot de Telegram en un hilo separado"""
+    """Ejecuta el bot de Telegram - VERSIÓN CORREGIDA"""
     print("🚀 CONFIGURANDO BOT DE TELEGRAM...")
     
     try:
@@ -3549,8 +3549,7 @@ def run_bot():
             .build()
         )
         
-        # AGREGAR TODOS LOS HANDLERS (copia esto exactamente)
-        
+        # AGREGAR TODOS LOS HANDLERS
         # 1. Handlers de comandos básicos para usuarios
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CommandHandler("cancelar", cancelar))
@@ -3613,8 +3612,15 @@ def run_bot():
         print("✅ BOT CONFIGURADO CORRECTAMENTE")
         print("📍 Escuchando mensajes de usuarios...")
         
-        # Iniciar el bot
-        application.run_polling()
+        # ✅ SOLUCIÓN: Usar asyncio para el bot
+        import asyncio
+        
+        # Crear un nuevo event loop para este hilo
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        # Ejecutar el bot
+        loop.run_until_complete(application.run_polling())
         
     except Exception as e:
         print(f"❌ ERROR en el bot: {e}")
@@ -3647,5 +3653,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
