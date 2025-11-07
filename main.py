@@ -8,6 +8,18 @@ import json
 import telegram
 from dotenv import load_dotenv  # Añadido para cargar variables de entorno
 
+app = Flask(__name__)
+
+@app.route('/')
+def health_check():
+    return "Bot is running", 200
+
+def run_flask_app():
+    port = int(os.environ.get('PORT', 10000))
+    app.run(host='0.0.0.0', port=port)
+
+
+
 # Configuración
 # Cargar variables de entorno
 load_dotenv()
@@ -3402,6 +3414,14 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f'❌ Error no manejado: {error}')
 
 def main():
+
+    flask_thread = threading.Thread(target=run_flask_app, daemon=True)
+    flask_thread.start()
+
+
+
+
+    
     """Función principal del bot con sistema completo de incremento"""
     try:
         # Inicializar base de datos
@@ -3558,3 +3578,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
