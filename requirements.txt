@@ -1,4 +1,5 @@
 python-telegram-bot[job-queue]==20.7
 psycopg[binary]
 python-dotenv==1.0.0
+flask==2.3.3
 
