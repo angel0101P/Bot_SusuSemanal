@@ -3534,22 +3534,27 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f'❌ Error no manejado: {error}')
 
 def main():
-
-    flask_thread = threading.Thread(target=run_flask_app, daemon=True)
-    flask_thread.start()
-
-
-
-
-    
     """Función principal del bot con sistema completo de incremento"""
+    
+    # DEBUG: Verificar configuración primero
+    print(f"🔑 Verificando configuración...")
+    print(f"🔑 TOKEN: {'✅ PRESENTE' if TOKEN else '❌ FALTANTE'}")
+    print(f"🔑 DATABASE_URL: {'✅ PRESENTE' if DATABASE_URL else '❌ FALTANTE'}")
+    
+    if not TOKEN:
+        print("❌ ERROR: No se encontró TELEGRAM_BOT_TOKEN")
+        print("💡 Asegúrate de tener un archivo .env con tu token")
+        return
+    
     try:
         # Inicializar base de datos
+        print("🗄️ Inicializando base de datos...")
         init_db()
         total_pagos, total_usuarios, total_productos, total_planes, semanas_config = verificar_base_datos()
         print(f"🚀 Bot iniciado. Registros en BD - Pagos: {total_pagos}, Usuarios: {total_usuarios}, Productos: {total_productos}, Planes: {total_planes}, Semanas: {semanas_config}")
         
         # Configuración con timeouts aumentados
+        print("⚙️ Configurando aplicación de Telegram...")
         application = (
             Application.builder()
             .token(TOKEN)
@@ -3672,17 +3677,24 @@ def main():
         print("   /incrementarsemana - Incremento manual")
         print("   /forzarincremento - Forzar incremento")
         print("   /rankingpuntos - Ranking de puntos")
-        print("   /vaciarranking - Vaciar sistema de puntos completo")
         print("   /verreferidos - Referidos pendientes")
         print("   /verpuntosusuario_ID - Puntos de usuario")
+        print("   /vaciarranking - Vaciar sistema de puntos")
         print(f"\n🔄 INCREMENTO AUTOMÁTICO: {job_queue_status}")
         print("🎛️  CONTROL ADMIN: Pausa/Reanuda contador")
         print("⭐ SISTEMA DE PUNTOS: 2-5 pts por pago, 7 pts por referido")
         print("💎 BENEFICIOS: 100 pts = 1 semana gym, 200 pts = 15% descuento")
         print("="*60 + "\n")
         
-        # Iniciar el bot
-        print("🟢 Iniciando bot...")
+        # 🚀 INICIAR FLASK EN SEGUNDO PLANO (para Render)
+        print("🌐 Iniciando servidor web para Render...")
+        flask_thread = threading.Thread(target=run_flask_app, daemon=True)
+        flask_thread.start()
+        
+        # 🟢 INICIAR EL BOT DE TELEGRAM
+        print("🟢 INICIANDO BOT DE TELEGRAM...")
+        print("📍 El bot ahora está escuchando mensajes...")
+        print("📍 Los usuarios pueden escribir /start al bot")
         application.run_polling()
         
     except Exception as e:
@@ -3694,12 +3706,13 @@ def main():
         print("   4. Reinicia Visual Studio Code")
         print("   5. Verifica que la base de datos Neon esté activa")
         
+        import traceback
+        traceback.print_exc()
+        
         # Esperar antes de salir para que el usuario pueda leer el mensaje
         import time
-        time.sleep(5)
+        time.sleep(10)
 
 if __name__ == "__main__":
     main()
-
-
 
