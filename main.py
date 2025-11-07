@@ -1,12 +1,14 @@
 import os
+import threading
+from flask import Flask  # ← AGREGAR ESTE IMPORT
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler
-import psycopg  # Cambiado de psycopg2 a psycopg (psycopg3)
+import psycopg
 from datetime import datetime, timedelta
 import json
 import telegram
-from dotenv import load_dotenv  # Añadido para cargar variables de entorno
+from dotenv import load_dotenv
 
 app = Flask(__name__)
 
@@ -3578,4 +3580,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
