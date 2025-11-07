@@ -769,6 +769,56 @@ async def rechazar_referido(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print(f"❌ Error al rechazar referido: {e}")
         await update.message.reply_text("❌ Error al rechazar el referido")
+        
+        
+        
+        # =============================================
+# 🆕 FUNCIÓN PARA VACIAR RANKING DE PUNTOS
+# =============================================
+
+async def vaciar_ranking_puntos(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Vacía/limpia todo el sistema de puntos (solo admin)"""
+    if update.effective_user.id != 5908252094:
+        await update.message.reply_text("❌ No tienes permisos de administrador")
+        return
+
+    # Crear teclado de confirmación
+    keyboard = [
+        [InlineKeyboardButton("✅ SÍ, VACIAR TODO", callback_data="vaciar_puntos_si")],
+        [InlineKeyboardButton("❌ CANCELAR", callback_data="vaciar_puntos_no")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    # Obtener estadísticas actuales
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT COUNT(*) FROM usuarios_puntos")
+    total_usuarios = cursor.fetchone()[0]
+    
+    cursor.execute("SELECT SUM(puntos_totales) FROM usuarios_puntos")
+    total_puntos = cursor.fetchone()[0] or 0
+    
+    cursor.execute("SELECT COUNT(*) FROM puntos_historial")
+    total_historial = cursor.fetchone()[0]
+    
+    cursor.execute("SELECT COUNT(*) FROM referidos")
+    total_referidos = cursor.fetchone()[0]
+    
+    conn.close()
+    
+    mensaje = (
+        "🗑️ **VACIAR SISTEMA DE PUNTOS - CONFIRMACIÓN**\n\n"
+        "⚠️ **ESTA ACCIÓN ELIMINARÁ:**\n"
+        f"• 👥 {total_usuarios} usuarios de la tabla de puntos\n"
+        f"• ⭐ {total_puntos} puntos totales en el sistema\n"
+        f"• 📊 {total_historial} registros del historial de puntos\n"
+        f"• 👥 {total_referidos} registros de referidos\n\n"
+        "❌ **ESTA ACCIÓN NO SE PUEDE DESHACER**\n\n"
+        "¿Estás completamente seguro de vaciar todo el sistema de puntos?"
+    )
+    
+    await update.message.reply_text(mensaje, reply_markup=reply_markup)
 
 async def ver_puntos_usuario(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Ver puntos de un usuario específico (solo admin)"""
@@ -3119,6 +3169,48 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data.startswith("borrarpago_no_"):
         await query.edit_message_text("❌ **Eliminación cancelada**\n\nEl pago se mantiene en el sistema.")
         
+        # VACIAR PUNTOS CONFIRMADO
+    elif query.data == "vaciar_puntos_si":
+        if user_id != 5908252094:
+            await query.answer("❌ No tienes permisos", show_alert=True)
+            return
+            
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            # 1. Vaciar tabla de usuarios_puntos
+            cursor.execute("DELETE FROM usuarios_puntos")
+            usuarios_eliminados = cursor.rowcount
+            
+            # 2. Vaciar historial de puntos
+            cursor.execute("DELETE FROM puntos_historial")
+            historial_eliminado = cursor.rowcount
+            
+            # 3. Vaciar tabla de referidos
+            cursor.execute("DELETE FROM referidos")
+            referidos_eliminados = cursor.rowcount
+            
+            conn.commit()
+            conn.close()
+            
+            await query.edit_message_text(
+                f"✅ **Sistema de puntos vaciado completamente**\n\n"
+                f"🗑️ **Datos eliminados:**\n"
+                f"• 👥 {usuarios_eliminados} usuarios de puntos\n"
+                f"• 📊 {historial_eliminado} registros de historial\n"
+                f"• 👥 {referidos_eliminados} referidos\n\n"
+                f"El sistema de puntos ha sido reiniciado a cero."
+            )
+            
+        except Exception as e:
+            print(f"❌ Error al vaciar puntos: {e}")
+            await query.edit_message_text("❌ Error al vaciar el sistema de puntos")
+
+    # CANCELAR VACIADO DE PUNTOS
+    elif query.data == "vaciar_puntos_no":
+        await query.edit_message_text("❌ **Operación cancelada**\n\nEl sistema de puntos se mantiene intacto.")
+        
         
 # =============================================
 # FUNCIONES DE MANEJO DE MENSAJES
@@ -3500,6 +3592,7 @@ def main():
         # 🆕 6. Handlers para sistema de puntos (admin)
         application.add_handler(CommandHandler("rankingpuntos", ranking_puntos))
         application.add_handler(CommandHandler("verreferidos", ver_referidos_pendientes))
+        application.add_handler(CommandHandler("vaciarranking", vaciar_ranking_puntos))
         
         # 7. NUEVOS HANDLERS PARA INCREMENTO DE SEMANAS
         application.add_handler(CommandHandler("incrementarsemana", incrementar_semana_manual))
@@ -3579,6 +3672,7 @@ def main():
         print("   /incrementarsemana - Incremento manual")
         print("   /forzarincremento - Forzar incremento")
         print("   /rankingpuntos - Ranking de puntos")
+        print("   /vaciarranking - Vaciar sistema de puntos completo")
         print("   /verreferidos - Referidos pendientes")
         print("   /verpuntosusuario_ID - Puntos de usuario")
         print(f"\n🔄 INCREMENTO AUTOMÁTICO: {job_queue_status}")
