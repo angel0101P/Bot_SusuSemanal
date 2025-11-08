@@ -1067,12 +1067,14 @@ async def forzar_incremento(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cursor = conn.cursor()
         
         cursor.execute("SELECT semanas FROM config_pagos LIMIT 1")
-        semanas_config = cursor.fetchone()[0] if cursor.fetchone() else 10
+        config = cursor.fetchone()
+        semanas_config = config[0] if config else 10
         
         # Incrementar IGNORANDO el estado de pausa
         cursor.execute("""
             UPDATE planes_pago 
-            SET semanas_completadas = semanas_completadas + 1
+            SET semanas_completadas = semanas_completadas + 1,
+                fecha_ultimo_pago = CURRENT_TIMESTAMP
             WHERE estado = 'activo' 
             AND semanas_completadas < semanas
         """)
@@ -1133,7 +1135,6 @@ async def notificar_usuarios_incremento(context: ContextTypes.DEFAULT_TYPE, tipo
         conn.close()
     except Exception as e:
         print(f"❌ Error en notificación: {e}")
-
 # =============================================
 # 🆕 MODIFICACIONES A FUNCIONES EXISTENTES
 # =============================================
@@ -3206,6 +3207,75 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("❌ **Operación cancelada**\n\nEl sistema de puntos se mantiene intacto.")
         
         
+        # BOTONES PARA INCREMENTO MANUAL
+    elif query.data == "reanudar_y_incrementar":
+        if user_id != 5908252094:
+            await query.answer("❌ No tienes permisos", show_alert=True)
+            return
+            
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            # Reanudar contador
+            cursor.execute("UPDATE config_pagos SET contador_activo = TRUE")
+            
+            # Incrementar semanas
+            cursor.execute("""
+                UPDATE planes_pago 
+                SET semanas_completadas = semanas_completadas + 1,
+                    fecha_ultimo_pago = CURRENT_TIMESTAMP
+                WHERE estado = 'activo' 
+                AND contador_pausado = FALSE
+                AND semanas_completadas < semanas
+            """)
+            planes_afectados = cursor.rowcount
+            
+            conn.commit()
+            conn.close()
+            
+            await query.edit_message_text(
+                f"✅ **Contador reanudado e incremento realizado**\n\n"
+                f"📈 {planes_afectados} planes incrementados +1 semana\n"
+                f"🟢 Contador global REANUDADO"
+            )
+            
+        except Exception as e:
+            print(f"❌ Error: {e}")
+            await query.edit_message_text("❌ Error al procesar")
+            
+    elif query.data == "incrementar_force":
+        if user_id != 5908252094:
+            await query.answer("❌ No tienes permisos", show_alert=True)
+            return
+            
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            # Solo incrementar sin reanudar contador
+            cursor.execute("""
+                UPDATE planes_pago 
+                SET semanas_completadas = semanas_completadas + 1,
+                    fecha_ultimo_pago = CURRENT_TIMESTAMP
+                WHERE estado = 'activo' 
+                AND semanas_completadas < semanas
+            """)
+            planes_afectados = cursor.rowcount
+            
+            conn.commit()
+            conn.close()
+            
+            await query.edit_message_text(
+                f"🚀 **INCREMENTO FORZADO**\n\n"
+                f"✅ {planes_afectados} planes incrementados +1 semana\n"
+                f"⏸️ Contador global sigue PAUSADO"
+            )
+            
+        except Exception as e:
+            print(f"❌ Error: {e}")
+            await query.edit_message_text("❌ Error al forzar incremento")
+        
 # =============================================
 # FUNCIONES DE MANEJO DE MENSAJES
 # =============================================
@@ -3704,7 +3774,6 @@ if __name__ == "__main__":
 
 if __name__ == "__main__":
     main()
-
 
 
 
