@@ -3771,26 +3771,28 @@ def main():
 if __name__ == "__main__":
     print("🚀 INICIANDO SISTEMA COMPLETO...")
     
-    # SOLUCIÓN: Invertir los hilos - Flask principal, bot en segundo plano
-    import asyncio
-    
-    def run_bot():
-        """Ejecutar el bot en su propio event loop"""
+    # SOLUCIÓN: Ejecutar el bot en el hilo principal y Flask en segundo plano
+    def run_flask():
+        """Ejecutar Flask en puerto diferente"""
         try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            main()  # Tu función main original
+            port = int(os.environ.get('PORT', 10000))
+            print(f"🌐 Flask ejecutándose en puerto {port}")
+            app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
         except Exception as e:
-            print(f"❌ Error en bot: {e}")
+            print(f"❌ Error en Flask: {e}")
     
-    # Iniciar bot en segundo plano
-    bot_thread = threading.Thread(target=run_bot, daemon=True)
-    bot_thread.start()
+    # Iniciar Flask en segundo plano
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
     
-    # Iniciar Flask en el hilo principal (para Render)
-    port = int(os.environ.get('PORT', 10000))
-    print(f"🌐 Servidor web principal en puerto {port}")
-    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
+    # Esperar un momento para que Flask se inicie
+    import time
+    time.sleep(2)
+    
+    # Ejecutar el bot en el HILO PRINCIPAL (esto es crucial)
+    print("🤖 Iniciando bot en hilo principal...")
+    main()
+
 
 
 
