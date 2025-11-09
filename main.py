@@ -3771,14 +3771,27 @@ def main():
 if __name__ == "__main__":
     print("🚀 INICIANDO SISTEMA COMPLETO...")
     
-    # Iniciar el bot en un hilo separado - CAMBIO AQUÍ
-    bot_thread = threading.Thread(target=main, daemon=True)  # ✅ Cambiado a 'main'
+    # SOLUCIÓN: Invertir los hilos - Flask principal, bot en segundo plano
+    import asyncio
+    
+    def run_bot():
+        """Ejecutar el bot en su propio event loop"""
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            main()  # Tu función main original
+        except Exception as e:
+            print(f"❌ Error en bot: {e}")
+    
+    # Iniciar bot en segundo plano
+    bot_thread = threading.Thread(target=run_bot, daemon=True)
     bot_thread.start()
     
     # Iniciar Flask en el hilo principal (para Render)
     port = int(os.environ.get('PORT', 10000))
-    print(f"🌐 Servidor web en puerto {port}")
+    print(f"🌐 Servidor web principal en puerto {port}")
     app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
+
 
 
 
