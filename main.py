@@ -3771,13 +3771,14 @@ def main():
 if __name__ == "__main__":
     print("🚀 INICIANDO SISTEMA COMPLETO...")
     
-    # Iniciar el bot en un hilo separado
-    bot_thread = threading.Thread(target=iniciar_bot, daemon=True)
+    # Iniciar el bot en un hilo separado - CAMBIO AQUÍ
+    bot_thread = threading.Thread(target=main, daemon=True)  # ✅ Cambiado a 'main'
     bot_thread.start()
     
     # Iniciar Flask en el hilo principal (para Render)
     port = int(os.environ.get('PORT', 10000))
     print(f"🌐 Servidor web en puerto {port}")
     app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
+
 
 
