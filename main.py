@@ -3769,11 +3769,8 @@ def main():
         traceback.print_exc()
 
 if __name__ == "__main__":
-    main()
-
-
-if __name__ == "__main__":
-    main()
-
+    port = int(os.environ.get('PORT', 10000))
+    print(f"🚀 Iniciando servidor en puerto {port}")
+    app.run(host='0.0.0.0', port=port, debug=False)
 
 
