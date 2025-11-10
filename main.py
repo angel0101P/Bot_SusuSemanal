@@ -2945,6 +2945,163 @@ async def borrarpago_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print(f"❌ Error en borrarpago_admin: {e}")
         await update.message.reply_text("❌ Error al procesar la eliminación")
+        
+        
+        
+        
+async def buscar_usuario_asignar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Buscar usuario por nombre para asignar productos"""
+    if update.effective_user.id != 5908252094:
+        await update.message.reply_text("❌ No tienes permisos de administrador")
+        return
+
+    if not context.args:
+        await update.message.reply_text(
+            "🔍 **BUSCAR USUARIO PARA ASIGNAR**\n\n"
+            "Uso: /asignar nombre_del_usuario\n\n"
+            "Ejemplo:\n"
+            "/asignar Juan Pérez\n"
+            "/asignar Maria\n"
+            "/asignar Carlos"
+        )
+        return
+
+    nombre_busqueda = ' '.join(context.args).lower()
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Buscar usuarios que coincidan con el nombre
+    cursor.execute("""
+        SELECT user_id, first_name, last_name, phone 
+        FROM usuarios 
+        WHERE LOWER(CONCAT(first_name, ' ', last_name)) LIKE %s 
+           OR LOWER(first_name) LIKE %s 
+           OR LOWER(last_name) LIKE %s
+        ORDER BY first_name, last_name
+    """, (f'%{nombre_busqueda}%', f'%{nombre_busqueda}%', f'%{nombre_busqueda}%'))
+    
+    usuarios = cursor.fetchall()
+    conn.close()
+
+    if not usuarios:
+        await update.message.reply_text(
+            f"❌ No se encontraron usuarios con: '{nombre_busqueda}'\n\n"
+            "Intenta con otro nombre o verifica la ortografía."
+        )
+        return
+
+    if len(usuarios) == 1:
+        # Si hay solo un resultado, proceder directamente a la asignación
+        user_id, first_name, last_name, phone = usuarios[0]
+        nombre_completo = f"{first_name or ''} {last_name or ''}".strip()
+        
+        await iniciar_asignacion_productos(update, context, user_id, nombre_completo)
+    else:
+        # Mostrar lista de usuarios encontrados
+        mensaje = f"🔍 **USUARIOS ENCONTRADOS** ({len(usuarios)})\n\n"
+        
+        keyboard = []
+        for user_id, first_name, last_name, phone in usuarios:
+            nombre_completo = f"{first_name or ''} {last_name or ''}".strip()
+            telefono = phone or "Sin teléfono"
+            
+            mensaje += f"👤 **{nombre_completo}**\n"
+            mensaje += f"📱 {telefono}\n"
+            mensaje += f"🆔 ID: {user_id}\n"
+            
+            # Botón para seleccionar este usuario
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"✅ {nombre_completo[:20]}...", 
+                    callback_data=f"seleccionar_usuario_{user_id}"
+                )
+            ])
+            
+            mensaje += "━━━━━━━━━━━━━━━━━━━━\n\n"
+
+        keyboard.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_busqueda")])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(mensaje, reply_markup=reply_markup)
+
+async def iniciar_asignacion_productos(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int, nombre_completo: str):
+    """Inicia el proceso de asignación de productos a un usuario específico"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Obtener productos activos
+    cursor.execute("SELECT id, nombre, precio, descripcion FROM productos WHERE estado = 'activo' ORDER BY nombre")
+    productos = cursor.fetchall()
+    
+    # Obtener plan actual del usuario (si existe)
+    cursor.execute("SELECT productos_json FROM planes_pago WHERE user_id = %s AND estado = 'activo'", (user_id,))
+    plan_actual = cursor.fetchone()
+    
+    productos_actuales = {}
+    if plan_actual and plan_actual[0]:
+        productos_actuales = plan_actual[0] if isinstance(plan_actual[0], dict) else json.loads(plan_actual[0])
+    
+    # Obtener configuración de semanas
+    cursor.execute("SELECT semanas FROM config_pagos LIMIT 1")
+    config = cursor.fetchone()
+    semanas = config[0] if config else 10
+    
+    conn.close()
+
+    if not productos:
+        await update.message.reply_text("❌ No hay productos disponibles en el catálogo")
+        return
+
+    # Crear interfaz de asignación
+    mensaje = f"🛍️ **ASIGNAR PRODUCTOS A USUARIO**\n\n"
+    mensaje += f"👤 **Usuario:** {nombre_completo}\n"
+    mensaje += f"🆔 **ID:** {user_id}\n\n"
+    mensaje += "📦 **PRODUCTOS DISPONIBLES:**\n\n"
+    
+    keyboard = []
+    
+    for producto_id, nombre, precio, descripcion in productos:
+        cantidad_actual = productos_actuales.get(str(producto_id), 0)
+        mensaje += f"📦 **{nombre}** - ${precio:.2f}\n"
+        mensaje += f"   📝 {descripcion or 'Sin descripción'}\n"
+        mensaje += f"   🔢 Cantidad actual: {cantidad_actual}\n"
+        
+        # Botones para ajustar cantidad
+        row = [
+            InlineKeyboardButton(f"➖ {nombre[:15]}...", callback_data=f"asignar_menos_{user_id}_{producto_id}"),
+            InlineKeyboardButton(f"➕ {nombre[:15]}...", callback_data=f"asignar_mas_{user_id}_{producto_id}")
+        ]
+        keyboard.append(row)
+    
+    # Botones de control
+    keyboard.append([InlineKeyboardButton("✅ CONFIRMAR ASIGNACIÓN", callback_data=f"asignar_confirmar_{user_id}")])
+    keyboard.append([InlineKeyboardButton("🔄 REINICIAR", callback_data=f"asignar_reiniciar_{user_id}")])
+    keyboard.append([InlineKeyboardButton("❌ CANCELAR", callback_data=f"asignar_cancelar")])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    # Calcular resumen actual
+    total_actual = 0
+    for producto_id, cantidad in productos_actuales.items():
+        for prod_id, nombre, precio, desc in productos:
+            if str(prod_id) == producto_id:
+                total_actual += precio * cantidad
+                break
+    
+    pago_semanal_actual = total_actual / semanas if semanas > 0 else 0
+    
+    mensaje += f"\n📊 **RESUMEN ACTUAL:**\n"
+    mensaje += f"💰 **Total:** ${total_actual:.2f}\n"
+    mensaje += f"📅 **Pago semanal:** ${pago_semanal_actual:.2f}\n"
+    mensaje += f"🔢 **Semanas:** {semanas}\n"
+    
+    # Si es un mensaje de callback (de búsqueda), usar edit_message_text
+    if update.callback_query:
+        await update.callback_query.edit_message_text(mensaje, reply_markup=reply_markup)
+    else:
+        await update.message.reply_text(mensaje, reply_markup=reply_markup)
+
 
 # =============================================
 # MANEJO DE BOTONES GENERALES
@@ -2957,6 +3114,31 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     print(f"🟡 BOTÓN PRESIONADO: {query.data}")
     user_id = query.from_user.id
+    
+    
+        # 🆕 NUEVO: MANEJAR SELECCIÓN DE USUARIO PARA ASIGNACIÓN
+    if query.data.startswith("seleccionar_usuario_"):
+        if user_id != 5908252094:
+            await query.answer("❌ No tienes permisos", show_alert=True)
+            return
+            
+        user_id_seleccionado = query.data.split('_')[2]
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT first_name, last_name FROM usuarios WHERE user_id = %s", (user_id_seleccionado,))
+        usuario = cursor.fetchone()
+        conn.close()
+        
+        if usuario:
+            first_name, last_name = usuario
+            nombre_completo = f"{first_name or ''} {last_name or ''}".strip()
+            await iniciar_asignacion_productos(update, context, user_id_seleccionado, nombre_completo)
+        else:
+            await query.edit_message_text("❌ Usuario no encontrado")
+    
+    elif query.data == "cancelar_busqueda":
+        await query.edit_message_text("❌ **Búsqueda cancelada**")
 
     # CONFIGURAR SEMANAS (SOLO ADMIN)
     if query.data.startswith("semanas_"):
@@ -3662,12 +3844,14 @@ def main():
     application.add_handler(CommandHandler("incrementarsemana", incrementar_semana_manual))
     application.add_handler(CommandHandler("forzarincremento", forzar_incremento))
     
-    # 8. Handler para comandos dinámicos de asignación
+    # 8. Handler para comandos dinámicos de asignación (EXCLUYENDO /asignar)
     application.add_handler(MessageHandler(
-        filters.Regex(r'^\/(verimagen|confirmar|rechazar|borrar|borrarusuario|asignar|editarproducto|eliminarproducto|verpago|borrarpago|verificarreferido|rechazarreferido|verpuntosusuario)_\d+'),
+        filters.Regex(r'^\/(verimagen|confirmar|rechazar|borrar|borrarusuario|editarproducto|eliminarproducto|verpago|borrarpago|verificarreferido|rechazarreferido|verpuntosusuario)_\d+'),
         handle_dynamic_commands
     ))
-    
+
+    # 🆕 NUEVO: Handler para asignación por nombre
+    application.add_handler(CommandHandler("asignar", buscar_usuario_asignar))
     # 9. Handler para mensajes normales
     application.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND,
@@ -3792,7 +3976,6 @@ if __name__ == "__main__":
     # Ejecutar el bot en el HILO PRINCIPAL (esto es crucial)
     print("🤖 Iniciando bot en hilo principal...")
     main()
-
 
 
 
