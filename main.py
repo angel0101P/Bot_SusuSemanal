@@ -1191,7 +1191,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        mensaje_bienvenida = f"👋 ¡Hola {first_name}!\n\nTe damos la bienvenida al sistema de planes de pago semanal."
+        mensaje_bienvenida = f"👋 ¡Hola {first_name}!\n\nTe damos la Bienvenida al Sistema de Pago por Cuotas de Herbalife 🌿"
         
         # 🆕 Informar sobre código de referido si existe
         if codigo_referido:
@@ -2074,11 +2074,16 @@ async def pagarealizado(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Por favor envía los datos de tu pago en el siguiente formato:\n\n"
         "**Nombre: Tu nombre completo**\n"
         "**Referencia: Número de referencia o transacción**\n"
-        "**Monto: Cantidad pagada**\n\n"
+        "**Monto: Cantidad pagada (Coloque el Monto en Dolares $)**\n\n"
         "Ejemplo:\n"
         "Nombre: Juan Pérez\n"
         "Referencia: 123456\n"
-        "Monto: 150.00"
+        "Monto: 150.00\n"
+        "‼Obligatorio que sea en este Formato:\n"
+        "‼Nombre: \n"
+        "‼Referencia: \n"
+        "Monto: \n"
+        "Debe escribir cada campo y llenarlo con sus datos"
     )
 
 async def verpagos(update: Update, context: ContextTypes.DEFAULT_TYPE):
