@@ -23,7 +23,12 @@ load_dotenv()
 # Configuración desde variables de entorno
 TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 DATABASE_URL = os.getenv('DATABASE_URL')
-ADMIN_ID = int(os.getenv('ADMIN_ID', '5908252094'))
+# IDs de administrador actualizados
+ADMIN_IDS = [5908252094, 7228946245, 1074083869]  # ← IDs ACTUALIZADOS
+
+# Función para verificar si es admin
+def is_admin(user_id: int) -> bool:
+    return user_id in ADMIN_IDS
 
 # Conexión a la base de datos - CAMBIO PARA PSYCOPG3
 def get_db_connection():
@@ -528,7 +533,7 @@ async def mispuntos(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def ranking_puntos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Muestra el ranking de puntos (solo admin)"""
-    if update.effective_user.id != 5908252094:
+    if not is_admin(update.effective_user.id):  # ← ACTUALIZADO
         await update.message.reply_text("❌ No tienes permisos de administrador")
         return
         
@@ -588,7 +593,7 @@ async def ranking_puntos(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def ver_referidos_pendientes(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Muestra todos los referidos pendientes de verificación (solo admin)"""
-    if update.effective_user.id != 5908252094:
+    if not is_admin(update.effective_user.id):  # ← ACTUALIZADO
         await update.message.reply_text("❌ No tienes permisos de administrador")
         return
         
@@ -637,7 +642,7 @@ async def ver_referidos_pendientes(update: Update, context: ContextTypes.DEFAULT
 
 async def verificar_referido(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Verifica un referido pendiente (solo admin)"""
-    if update.effective_user.id != 5908252094:
+    if not is_admin(update.effective_user.id):  # ← ACTUALIZADO
         await update.message.reply_text("❌ No tienes permisos de administrador")
         return
 
@@ -707,7 +712,7 @@ async def verificar_referido(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def rechazar_referido(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Rechaza un referido pendiente (solo admin)"""
-    if update.effective_user.id != 5908252094:
+    if not is_admin(update.effective_user.id):  # ← ACTUALIZADO
         await update.message.reply_text("❌ No tienes permisos de administrador")
         return
 
@@ -772,7 +777,7 @@ async def rechazar_referido(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def vaciar_ranking_puntos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Vacía/limpia todo el sistema de puntos (solo admin)"""
-    if update.effective_user.id != 5908252094:
+    if not is_admin(update.effective_user.id):  # ← ACTUALIZADO
         await update.message.reply_text("❌ No tienes permisos de administrador")
         return
 
@@ -816,7 +821,7 @@ async def vaciar_ranking_puntos(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def ver_puntos_usuario(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Ver puntos de un usuario específico (solo admin)"""
-    if update.effective_user.id != 5908252094:
+    if not is_admin(update.effective_user.id):  # ← ACTUALIZADO
         await update.message.reply_text("❌ No tienes permisos de administrador")
         return
 
@@ -981,7 +986,7 @@ async def incrementar_semanas_automatico(context: ContextTypes.DEFAULT_TYPE):
 
 async def incrementar_semana_manual(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Incrementa una semana manualmente respetando la configuración"""
-    if update.effective_user.id != 5908252094:
+    if not is_admin(update.effective_user.id):  # ← ACTUALIZADO
         await update.message.reply_text("❌ No tienes permisos de administrador")
         return
 
@@ -1058,7 +1063,7 @@ async def incrementar_semana_manual(update: Update, context: ContextTypes.DEFAUL
 
 async def forzar_incremento(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Fuerza el incremento de semana ignorando el estado de pausa"""
-    if update.effective_user.id != 5908252094:
+    if not is_admin(update.effective_user.id):  # ← ACTUALIZADO
         await update.message.reply_text("❌ No tienes permisos de administrador")
         return
 
@@ -1347,7 +1352,7 @@ async def miperfil(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def confirmar_pago(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Confirma un pago pendiente (admin) - ACTUALIZADO CON SISTEMA DE PUNTOS"""
-    if update.effective_user.id != 5908252094:
+    if not is_admin(update.effective_user.id):  # ← ACTUALIZADO
         await update.message.reply_text("❌ No tienes permisos de administrador")
         return
 
@@ -1478,7 +1483,7 @@ async def button_handler_puntos(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def asignar_productos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Asignar productos a usuario (solo admin)"""
-    if update.effective_user.id != 5908252094:
+    if not is_admin(update.effective_user.id):  # ← ACTUALIZADO
         await update.message.reply_text("❌ No tienes permisos de administrador")
         return
 
@@ -1575,7 +1580,7 @@ async def asignar_productos(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def ver_asignaciones(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Ver todas las asignaciones activas (solo admin)"""
-    if update.effective_user.id != 5908252094:
+    if not is_admin(update.effective_user.id):  # ← ACTUALIZADO
         await update.message.reply_text("❌ No tienes permisos de administrador")
         return
         
@@ -2078,7 +2083,7 @@ async def pagarealizado(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def verpagos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Muestra los pagos pendientes (solo admin)"""
-    if update.effective_user.id != 5908252094:
+    if not is_admin(update.effective_user.id):  # ← ACTUALIZADO
         await update.message.reply_text("❌ No tienes permisos de administrador")
         return
         
@@ -2114,7 +2119,7 @@ async def verpagos(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def verusuarios(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Muestra todos los usuarios (solo admin)"""
-    if update.effective_user.id != 5908252094:
+    if not is_admin(update.effective_user.id):  # ← ACTUALIZADO
         await update.message.reply_text("❌ No tienes permisos de administrador")
         return
         
@@ -2291,7 +2296,7 @@ async def handle_rechazo_motivo(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def verimagen_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Muestra la imagen del comprobante de pago (admin)"""
-    if update.effective_user.id != 5908252094:
+    if not is_admin(update.effective_user.id):  # ← ACTUALIZADO
         await update.message.reply_text("❌ No tienes permisos de administrador")
         return
 
@@ -2324,7 +2329,7 @@ async def verimagen_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def rechazar_pago(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Rechaza un pago pendiente (admin)"""
-    if update.effective_user.id != 5908252094:
+    if not is_admin(update.effective_user.id):  # ← ACTUALIZADO
         await update.message.reply_text("❌ No tienes permisos de administrador")
         return
 
@@ -2345,7 +2350,7 @@ async def rechazar_pago(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def borrar_pago(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Elimina un pago (admin)"""
-    if update.effective_user.id != 5908252094:
+    if not is_admin(update.effective_user.id):  # ← ACTUALIZADO
         await update.message.reply_text("❌ No tienes permisos de administrador")
         return
 
@@ -2367,7 +2372,7 @@ async def borrar_pago(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def borrarusuario(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Elimina un usuario y TODOS sus datos relacionados (admin)"""
-    if update.effective_user.id != 5908252094:
+    if not is_admin(update.effective_user.id):  # ← ACTUALIZADO
         await update.message.reply_text("❌ No tienes permisos de administrador")
         return
 
@@ -2440,7 +2445,7 @@ async def borrarusuario(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def admin_ver_productos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Ver catálogo completo para admin"""
-    if update.effective_user.id != 5908252094:
+    if not is_admin(update.effective_user.id):  # ← ACTUALIZADO
         await update.message.reply_text("❌ No tienes permisos de administrador")
         return
         
@@ -2487,7 +2492,7 @@ async def admin_ver_productos(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def admin_agregar_producto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Agregar producto completo con descripción y categoría"""
-    if update.effective_user.id != 5908252094:
+    if not is_admin(update.effective_user.id):  # ← ACTUALIZADO
         await update.message.reply_text("❌ No tienes permisos de administrador")
         return
         
@@ -2508,7 +2513,7 @@ async def admin_agregar_producto(update: Update, context: ContextTypes.DEFAULT_T
 
 async def editar_producto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Editar producto existente"""
-    if update.effective_user.id != 5908252094:
+    if not is_admin(update.effective_user.id):  # ← ACTUALIZADO
         await update.message.reply_text("❌ No tienes permisos de administrador")
         return
 
@@ -2554,7 +2559,7 @@ async def editar_producto(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def eliminar_producto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Eliminar producto con confirmación"""
-    if update.effective_user.id != 5908252094:
+    if not is_admin(update.effective_user.id):  # ← ACTUALIZADO
         await update.message.reply_text("❌ No tienes permisos de administrador")
         return
 
@@ -2601,7 +2606,7 @@ async def eliminar_producto(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def estado_contador(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Ver estado del contador con información completa"""
-    if update.effective_user.id != 5908252094:
+    if not is_admin(update.effective_user.id):  # ← ACTUALIZADO
         await update.message.reply_text("❌ No tienes permisos de administrador")
         return
 
@@ -2651,7 +2656,7 @@ async def estado_contador(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def pausar_contador(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Pausar contador de semanas"""
-    if update.effective_user.id != 5908252094:
+    if not is_admin(update.effective_user.id):  # ← ACTUALIZADO
         await update.message.reply_text("❌ No tienes permisos de administrador")
         return
 
@@ -2670,7 +2675,7 @@ async def pausar_contador(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def reanudar_contador(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Reanudar contador de semanas"""
-    if update.effective_user.id != 5908252094:
+    if not is_admin(update.effective_user.id):  # ← ACTUALIZADO
         await update.message.reply_text("❌ No tienes permisos de administrador")
         return
 
@@ -2689,7 +2694,7 @@ async def reanudar_contador(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def configurar_semanas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Configurar semanas con opciones predefinidas y reinicio automático"""
-    if update.effective_user.id != 5908252094:
+    if not is_admin(update.effective_user.id):  # ← ACTUALIZADO
         await update.message.reply_text("❌ No tienes permisos de administrador")
         return
 
@@ -2794,7 +2799,7 @@ async def configurar_semanas(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def verpagostodos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Muestra TODOS los pagos con opciones simplificadas (solo admin)"""
-    if update.effective_user.id != 5908252094:
+    if not is_admin(update.effective_user.id):  # ← ACTUALIZADO
         await update.message.reply_text("❌ No tienes permisos de administrador")
         return
         
@@ -2837,7 +2842,7 @@ async def verpagostodos(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def verpago_detalle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Ver detalles de un pago específico (admin)"""
-    if update.effective_user.id != 5908252094:
+    if not is_admin(update.effective_user.id):  # ← ACTUALIZADO
         await update.message.reply_text("❌ No tienes permisos de administrador")
         return
 
@@ -2898,7 +2903,7 @@ async def verpago_detalle(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def borrarpago_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Eliminar pago con confirmación (admin)"""
-    if update.effective_user.id != 5908252094:
+    if not is_admin(update.effective_user.id):  # ← ACTUALIZADO
         await update.message.reply_text("❌ No tienes permisos de administrador")
         return
 
@@ -2951,7 +2956,7 @@ async def borrarpago_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
 async def buscar_usuario_asignar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Buscar usuario por nombre para asignar productos"""
-    if update.effective_user.id != 5908252094:
+    if not is_admin(update.effective_user.id):  # ← ACTUALIZADO
         await update.message.reply_text("❌ No tienes permisos de administrador")
         return
 
@@ -3118,7 +3123,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
         # 🆕 NUEVO: MANEJAR SELECCIÓN DE USUARIO PARA ASIGNACIÓN
     if query.data.startswith("seleccionar_usuario_"):
-        if user_id != 5908252094:
+        if not is_admin(user_id):  # ← ACTUALIZADO
             await query.answer("❌ No tienes permisos", show_alert=True)
             return
             
@@ -3142,7 +3147,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # CONFIGURAR SEMANAS (SOLO ADMIN)
     if query.data.startswith("semanas_"):
-        if user_id != 5908252094:
+        if not is_admin(user_id):  # ← ACTUALIZADO
             await query.answer("❌ No tienes permisos", show_alert=True)
             return
             
@@ -3221,7 +3226,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # EDITAR PRODUCTO (ADMIN)
     elif query.data.startswith("editar_"):
-        if user_id != 5908252094:
+        if not is_admin(user_id):  # ← ACTUALIZADO
             await query.answer("❌ No tienes permisos", show_alert=True)
             return
             
@@ -3245,7 +3250,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ELIMINAR PRODUCTO (ADMIN)
     elif query.data.startswith("eliminar_si_"):
-        if user_id != 5908252094:
+        if not is_admin(user_id):  # ← ACTUALIZADO
             await query.answer("❌ No tienes permisos", show_alert=True)
             return
             
@@ -3272,7 +3277,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     # ELIMINAR USUARIO CONFIRMADO
     elif query.data.startswith("eliminar_usuario_si_"):
-        if user_id != 5908252094:
+        if not is_admin(user_id):  # ← ACTUALIZADO
             await query.answer("❌ No tienes permisos", show_alert=True)
             return
             
@@ -3320,7 +3325,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     # BORRAR PAGO CONFIRMADO
     elif query.data.startswith("borrarpago_si_"):
-        if user_id != 5908252094:
+        if not is_admin(user_id):  # ← ACTUALIZADO
             await query.answer("❌ No tienes permisos", show_alert=True)
             return
             
@@ -3348,7 +3353,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # VACIAR PUNTOS CONFIRMADO
     elif query.data == "vaciar_puntos_si":
-        if user_id != 5908252094:
+        if not is_admin(user_id):  # ← ACTUALIZADO
             await query.answer("❌ No tienes permisos", show_alert=True)
             return
             
@@ -3391,7 +3396,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # BOTONES PARA INCREMENTO MANUAL
     elif query.data == "reanudar_y_incrementar":
-        if user_id != 5908252094:
+        if not is_admin(user_id):  # ← ACTUALIZADO
             await query.answer("❌ No tienes permisos", show_alert=True)
             return
             
@@ -3427,7 +3432,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("❌ Error al procesar")
             
     elif query.data == "incrementar_force":
-        if user_id != 5908252094:
+        if not is_admin(user_id):  # ← ACTUALIZADO
             await query.answer("❌ No tienes permisos", show_alert=True)
             return
             
@@ -3646,7 +3651,7 @@ async def handle_configurar_semanas(update: Update, context: ContextTypes.DEFAUL
     if not context.user_data.get('configurando_semanas'):
         return
     
-    if update.effective_user.id != 5908252094:
+    if not is_admin(update.effective_user.id):  # ← ACTUALIZADO
         await update.message.reply_text("❌ No tienes permisos de administrador")
         context.user_data['configurando_semanas'] = None
         return
@@ -3919,7 +3924,7 @@ def main():
     print("   /referidos - Invitar amigos")
     print("   /pagarealizado - Registrar pago")
     print("   /mistatus - Estado de mis pagos")
-    print("\n📍 COMANDOS PARA ADMIN (5908252094):")
+    print("\n📍 COMANDOS PARA ADMIN (5908252094, 7228946245, 1074083869):")  # ← ACTUALIZADO
     print("   /verasignaciones - Ver todas las asignaciones")
     print("   /asignar_X - Asignar productos a usuario")
     print("   /adminverproductos - Ver catálogo completo")
@@ -3976,7 +3981,3 @@ if __name__ == "__main__":
     # Ejecutar el bot en el HILO PRINCIPAL (esto es crucial)
     print("🤖 Iniciando bot en hilo principal...")
     main()
-
-
-
-
