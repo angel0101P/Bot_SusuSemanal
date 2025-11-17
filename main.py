@@ -1661,7 +1661,7 @@ async def miperfil(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def confirmar_pago(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Confirma un pago pendiente (admin) - ACTUALIZADO CON SISTEMA DE PUNTOS"""
-    if not is_admin(update.effective_user.id):  # ← ACTUALIZADO
+    if not is_admin(update.effective_user.id):
         await update.message.reply_text("❌ No tienes permisos de administrador")
         return
 
@@ -1686,17 +1686,40 @@ async def confirmar_pago(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Actualizar estado del pago
         cursor.execute("UPDATE pagos SET estado = 'aprobado' WHERE id = %s", (pago_id,))
         
-        # 🆕 CALCULAR PUNTOS POR PAGO
+        # 🆕 CALCULAR PUNTOS POR PAGO - VERSIÓN CORREGIDA
         puntos_otorgados = 0
         descripcion_puntos = ""
         
-        # Verificar si es pago adelantado (más de 7 días antes del incremento automático)
-        fecha_actual = datetime.now()
-        dias_restantes = (fecha_actual - fecha_pago).days
+        # Convertir fecha_pago a datetime si es necesario
+        if isinstance(fecha_pago, str):
+            fecha_pago = datetime.fromisoformat(fecha_pago.replace('Z', '+00:00'))
         
-        if dias_restantes >= 7:
+        fecha_actual = datetime.now()
+        
+        # Calcular días hasta el próximo lunes
+        dias_hasta_lunes = (0 - fecha_actual.weekday()) % 7  # 0 = lunes
+        if dias_hasta_lunes == 0 and fecha_actual.hour < 12:
+            # Si es lunes antes del mediodía, considerar como misma semana
+            dias_hasta_lunes = 0
+        elif dias_hasta_lunes == 0:
+            # Si es lunes después del mediodía, próximo lunes en 7 días
+            dias_hasta_lunes = 7
+        
+        proximo_incremento = fecha_actual + timedelta(days=dias_hasta_lunes)
+        
+        # Calcular anticipación (días entre pago y próximo incremento)
+        # Usar solo la parte de fecha, ignorando la hora
+        fecha_pago_date = fecha_pago.date()
+        proximo_incremento_date = proximo_incremento.date()
+        fecha_actual_date = fecha_actual.date()
+        
+        dias_anticipacion = (proximo_incremento_date - fecha_pago_date).days
+        
+        print(f"🔍 DEBUG Puntos: Pago={fecha_pago_date}, Hoy={fecha_actual_date}, ProxIncremento={proximo_incremento_date}, Anticipación={dias_anticipacion}d")
+        
+        if dias_anticipacion >= 3:
             puntos_otorgados = 5
-            descripcion_puntos = f"Pago adelantado - ${monto:.2f}"
+            descripcion_puntos = f"Pago adelantado (+{dias_anticipacion}d) - ${monto:.2f}"
         else:
             puntos_otorgados = 2
             descripcion_puntos = f"Pago puntual - ${monto:.2f}"
@@ -1719,7 +1742,8 @@ async def confirmar_pago(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             
             if puntos_otorgados > 0:
-                mensaje_usuario += f"⭐ **+{puntos_otorgados} puntos** agregados a tu cuenta\n\n"
+                tipo_pago = "adelantado 🚀" if puntos_otorgados == 5 else "puntual ⏰"
+                mensaje_usuario += f"⭐ **+{puntos_otorgados} puntos** ({tipo_pago})\n\n"
             
             mensaje_usuario += (
                 f"Puedes ver el estado actualizado con /mistatus\n"
@@ -1734,11 +1758,13 @@ async def confirmar_pago(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             print(f"❌ No se pudo notificar al usuario: {e}")
         
-        mensaje_admin = f"✅ Pago aprobado y usuario notificado"
-        if puntos_otorgados > 0:
-            mensaje_admin += f" (+{puntos_otorgados} puntos otorgados)"
-        
-        await update.message.reply_text(mensaje_admin)
+        tipo_pago_admin = "adelantado" if puntos_otorgados == 5 else "puntual"
+        await update.message.reply_text(
+            f"✅ Pago aprobado\n"
+            f"💰 ${monto:.2f}\n"
+            f"⭐ +{puntos_otorgados} pts ({tipo_pago_admin})\n"
+            f"📅 Anticipación: {dias_anticipacion} días"
+        )
         
     except Exception as e:
         print(f"❌ Error en confirmar_pago: {e}")
@@ -4300,3 +4326,4 @@ if __name__ == "__main__":
     # Ejecutar el bot en el HILO PRINCIPAL (esto es crucial)
     print("🤖 Iniciando bot en hilo principal...")
     main()
+
