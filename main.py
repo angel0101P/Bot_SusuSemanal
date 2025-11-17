@@ -770,8 +770,317 @@ async def rechazar_referido(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Error al rechazar el referido")
         
         
+       
+
+# =============================================
+# 🆕 SISTEMA DE EDICIÓN DE PUNTOS (ADMIN)
+# =============================================
+
+async def agregar_puntos_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Agrega puntos a un usuario específico (solo admin)"""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("❌ No tienes permisos de administrador")
+        return
+
+    if not context.args or len(context.args) < 2:
+        await update.message.reply_text(
+            "📝 **AGREGAR PUNTOS A USUARIO**\n\n"
+            "Uso: /agregarpuntos_ID cantidad\n\n"
+            "Ejemplo:\n"
+            "/agregarpuntos_123456 10\n"
+            "/agregarpuntos_789012 5"
+        )
+        return
+
+    try:
+        # Extraer user_id y cantidad del comando
+        command_text = ' '.join(context.args)
+        partes = command_text.split(' ')
+        user_id = int(partes[0])
+        puntos = int(partes[1])
         
-        # =============================================
+        if puntos <= 0:
+            await update.message.reply_text("❌ La cantidad debe ser mayor a 0")
+            return
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Verificar si el usuario existe
+        cursor.execute("SELECT first_name, last_name FROM usuarios WHERE user_id = %s", (user_id,))
+        usuario = cursor.fetchone()
+        
+        if not usuario:
+            await update.message.reply_text("❌ Usuario no encontrado")
+            conn.close()
+            return
+        
+        first_name, last_name = usuario
+        nombre_completo = f"{first_name or ''} {last_name or ''}".strip()
+        
+        # Agregar puntos usando la función existente
+        descripcion = f"Puntos asignados por administrador"
+        success = await agregar_puntos(user_id, puntos, "admin", descripcion)
+        
+        conn.close()
+        
+        if success:
+            # Obtener nuevos puntos para mostrar
+            conn_temp = get_db_connection()
+            cursor_temp = conn_temp.cursor()
+            cursor_temp.execute("SELECT puntos_disponibles FROM usuarios_puntos WHERE user_id = %s", (user_id,))
+            nuevos_puntos = cursor_temp.fetchone()
+            conn_temp.close()
+            
+            puntos_actuales = nuevos_puntos[0] if nuevos_puntos else puntos
+            
+            await update.message.reply_text(
+                f"✅ **Puntos agregados exitosamente**\n\n"
+                f"👤 **Usuario:** {nombre_completo}\n"
+                f"🆔 **ID:** {user_id}\n"
+                f"⭐ **Puntos agregados:** +{puntos}\n"
+                f"🏆 **Puntos actuales:** {puntos_actuales}\n\n"
+                f"El usuario ha sido notificado automáticamente."
+            )
+            
+            # Notificar al usuario
+            try:
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=f"🎉 **¡HAS RECIBIDO PUNTOS!**\n\n"
+                         f"El administrador te ha asignado {puntos} puntos.\n\n"
+                         f"⭐ **Puntos actuales:** {puntos_actuales}\n"
+                         f"📝 **Razón:** {descripcion}\n\n"
+                         f"Ver tus puntos: /mispuntos"
+                )
+                
+                # Verificar beneficios
+                await verificar_beneficios_puntos(user_id)
+                
+            except Exception as e:
+                print(f"❌ No se pudo notificar al usuario: {e}")
+        else:
+            await update.message.reply_text("❌ Error al agregar puntos")
+            
+    except ValueError:
+        await update.message.reply_text("❌ Formato incorrecto. Usa: /agregarpuntos_ID cantidad")
+    except Exception as e:
+        print(f"❌ Error en agregar_puntos_admin: {e}")
+        await update.message.reply_text("❌ Error al procesar la solicitud")
+
+async def quitar_puntos_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Quita puntos a un usuario específico (solo admin)"""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("❌ No tienes permisos de administrador")
+        return
+
+    if not context.args or len(context.args) < 2:
+        await update.message.reply_text(
+            "📝 **QUITAR PUNTOS A USUARIO**\n\n"
+            "Uso: /quitarpuntos_ID cantidad\n\n"
+            "Ejemplo:\n"
+            "/quitarpuntos_123456 10\n"
+            "/quitarpuntos_789012 5"
+        )
+        return
+
+    try:
+        # Extraer user_id y cantidad del comando
+        command_text = ' '.join(context.args)
+        partes = command_text.split(' ')
+        user_id = int(partes[0])
+        puntos = int(partes[1])
+        
+        if puntos <= 0:
+            await update.message.reply_text("❌ La cantidad debe ser mayor a 0")
+            return
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Verificar si el usuario existe
+        cursor.execute("SELECT first_name, last_name FROM usuarios WHERE user_id = %s", (user_id,))
+        usuario = cursor.fetchone()
+        
+        if not usuario:
+            await update.message.reply_text("❌ Usuario no encontrado")
+            conn.close()
+            return
+        
+        first_name, last_name = usuario
+        nombre_completo = f"{first_name or ''} {last_name or ''}".strip()
+        
+        # Verificar puntos actuales
+        cursor.execute("SELECT puntos_disponibles FROM usuarios_puntos WHERE user_id = %s", (user_id,))
+        puntos_actuales = cursor.fetchone()
+        
+        if not puntos_actuales or puntos_actuales[0] < puntos:
+            await update.message.reply_text(
+                f"❌ **No hay suficientes puntos**\n\n"
+                f"El usuario tiene {puntos_actuales[0] if puntos_actuales else 0} puntos\n"
+                f"Intentas quitar: {puntos} puntos"
+            )
+            conn.close()
+            return
+        
+        # Quitar puntos (agregar puntos negativos)
+        descripcion = f"Puntos removidos por administrador"
+        success = await agregar_puntos(user_id, -puntos, "admin", descripcion)
+        
+        conn.close()
+        
+        if success:
+            # Obtener nuevos puntos para mostrar
+            conn_temp = get_db_connection()
+            cursor_temp = conn_temp.cursor()
+            cursor_temp.execute("SELECT puntos_disponibles FROM usuarios_puntos WHERE user_id = %s", (user_id,))
+            nuevos_puntos = cursor_temp.fetchone()
+            conn_temp.close()
+            
+            puntos_finales = nuevos_puntos[0] if nuevos_puntos else 0
+            
+            await update.message.reply_text(
+                f"✅ **Puntos quitados exitosamente**\n\n"
+                f"👤 **Usuario:** {nombre_completo}\n"
+                f"🆔 **ID:** {user_id}\n"
+                f"⭐ **Puntos quitados:** -{puntos}\n"
+                f"🏆 **Puntos actuales:** {puntos_finales}\n\n"
+                f"El usuario ha sido notificado."
+            )
+            
+            # Notificar al usuario
+            try:
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=f"ℹ️ **AJUSTE DE PUNTOS**\n\n"
+                         f"El administrador ha removido {puntos} puntos de tu cuenta.\n\n"
+                         f"⭐ **Puntos actuales:** {puntos_finales}\n"
+                         f"📝 **Razón:** {descripcion}\n\n"
+                         f"Ver tus puntos: /mispuntos"
+                )
+            except Exception as e:
+                print(f"❌ No se pudo notificar al usuario: {e}")
+        else:
+            await update.message.reply_text("❌ Error al quitar puntos")
+            
+    except ValueError:
+        await update.message.reply_text("❌ Formato incorrecto. Usa: /quitarpuntos_ID cantidad")
+    except Exception as e:
+        print(f"❌ Error en quitar_puntos_admin: {e}")
+        await update.message.reply_text("❌ Error al procesar la solicitud")
+
+async def establecer_puntos_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Establece puntos exactos a un usuario (solo admin)"""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("❌ No tienes permisos de administrador")
+        return
+
+    if not context.args or len(context.args) < 2:
+        await update.message.reply_text(
+            "📝 **ESTABLECER PUNTOS EXACTOS**\n\n"
+            "Uso: /establecerpuntos_ID cantidad\n\n"
+            "Ejemplo:\n"
+            "/establecerpuntos_123456 50\n"
+            "/establecerpuntos_789012 0"
+        )
+        return
+
+    try:
+        # Extraer user_id y cantidad del comando
+        command_text = ' '.join(context.args)
+        partes = command_text.split(' ')
+        user_id = int(partes[0])
+        puntos = int(partes[1])
+        
+        if puntos < 0:
+            await update.message.reply_text("❌ La cantidad no puede ser negativa")
+            return
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Verificar si el usuario existe
+        cursor.execute("SELECT first_name, last_name FROM usuarios WHERE user_id = %s", (user_id,))
+        usuario = cursor.fetchone()
+        
+        if not usuario:
+            await update.message.reply_text("❌ Usuario no encontrado")
+            conn.close()
+            return
+        
+        first_name, last_name = usuario
+        nombre_completo = f"{first_name or ''} {last_name or ''}".strip()
+        
+        # Obtener puntos actuales para calcular diferencia
+        cursor.execute("SELECT puntos_disponibles FROM usuarios_puntos WHERE user_id = %s", (user_id,))
+        puntos_actuales = cursor.fetchone()
+        
+        puntos_anteriores = puntos_actuales[0] if puntos_actuales else 0
+        diferencia = puntos - puntos_anteriores
+        
+        # Actualizar puntos directamente
+        if puntos_actuales:
+            # Usuario ya existe en tabla de puntos, actualizar
+            cursor.execute("""
+                UPDATE usuarios_puntos 
+                SET puntos_disponibles = %s, 
+                    puntos_totales = puntos_totales + %s,
+                    fecha_actualizacion = CURRENT_TIMESTAMP
+                WHERE user_id = %s
+            """, (puntos, diferencia, user_id))
+        else:
+            # Crear nuevo registro
+            cursor.execute("""
+                INSERT INTO usuarios_puntos (user_id, puntos_totales, puntos_disponibles)
+                VALUES (%s, %s, %s)
+            """, (user_id, puntos, puntos))
+        
+        # Registrar en historial
+        descripcion = f"Puntos establecidos por administrador (antes: {puntos_anteriores})"
+        cursor.execute("""
+            INSERT INTO puntos_historial (user_id, tipo, puntos, descripcion)
+            VALUES (%s, %s, %s, %s)
+        """, (user_id, "admin", diferencia, descripcion))
+        
+        conn.commit()
+        conn.close()
+        
+        await update.message.reply_text(
+            f"✅ **Puntos establecidos exitosamente**\n\n"
+            f"👤 **Usuario:** {nombre_completo}\n"
+            f"🆔 **ID:** {user_id}\n"
+            f"📊 **Puntos anteriores:** {puntos_anteriores}\n"
+            f"⭐ **Puntos establecidos:** {puntos}\n"
+            f"🔢 **Diferencia:** {diferencia:+}\n\n"
+            f"El usuario ha sido notificado."
+        )
+        
+        # Notificar al usuario
+        try:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=f"ℹ️ **AJUSTE DE PUNTOS**\n\n"
+                     f"El administrador ha establecido tus puntos a {puntos}.\n\n"
+                     f"📊 **Puntos anteriores:** {puntos_anteriores}\n"
+                     f"⭐ **Puntos actuales:** {puntos}\n"
+                     f"📝 **Razón:** {descripcion}\n\n"
+                     f"Ver tus puntos: /mispuntos"
+            )
+            
+            # Verificar beneficios
+            await verificar_beneficios_puntos(user_id)
+            
+        except Exception as e:
+            print(f"❌ No se pudo notificar al usuario: {e}")
+            
+    except ValueError:
+        await update.message.reply_text("❌ Formato incorrecto. Usa: /establecerpuntos_ID cantidad")
+    except Exception as e:
+        print(f"❌ Error en establecer_puntos_admin: {e}")
+        await update.message.reply_text("❌ Error al procesar la solicitud")       
+       
+        
+# =============================================
 # 🆕 FUNCIÓN PARA VACIAR RANKING DE PUNTOS
 # =============================================
 
@@ -3850,6 +4159,11 @@ def main():
     application.add_handler(CommandHandler("verreferidos", ver_referidos_pendientes))
     application.add_handler(CommandHandler("vaciarranking", vaciar_ranking_puntos))
     
+    # 🆕 Handlers para edición de puntos (admin)
+    application.add_handler(CommandHandler("agregarpuntos", agregar_puntos_admin))
+    application.add_handler(CommandHandler("quitarpuntos", quitar_puntos_admin))
+    application.add_handler(CommandHandler("establecerpuntos", establecer_puntos_admin))
+        
     # 7. NUEVOS HANDLERS PARA INCREMENTO DE SEMANAS
     application.add_handler(CommandHandler("incrementarsemana", incrementar_semana_manual))
     application.add_handler(CommandHandler("forzarincremento", forzar_incremento))
