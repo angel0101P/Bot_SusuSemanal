@@ -4261,24 +4261,22 @@ def run_flask():
         print(f"❌ Error en Flask: {e}")
 
 if __name__ == "__main__":
-    print("🚀 INICIANDO SISTEMA COMPLETO...")
+    print("🚀 INICIANDO SISTEMA COMPLETO - UNA SOLA VEZ")
     
-    # SOLUCIÓN: Solo iniciar Flask si estamos en Render
-    # En desarrollo local, solo ejecutar el bot
+    # SOLUCIÓN CRÍTICA: Evitar duplicación
+    import sys
+    if hasattr(sys, '_called_from_main'):
+        print("⚠️ Ya se está ejecutando, evitando duplicación...")
+        sys.exit(0)
+    sys._called_from_main = True
     
+    # En Render, iniciar Flask en segundo plano
     if 'RENDER' in os.environ or 'PORT' in os.environ:
-        print("🌐 Detectado entorno Render - Iniciando Flask en segundo plano...")
-        # En Render, iniciar Flask en segundo plano
+        print("🌐 Detectado entorno Render - Iniciando Flask...")
         flask_thread = threading.Thread(target=run_flask, daemon=True)
         flask_thread.start()
-        
-        # Esperar un momento para que Flask se inicie
-        import time
         time.sleep(3)
-        
-        # Luego ejecutar el bot
-        run_bot()
-    else:
-        print("💻 Entorno local - Ejecutando solo el bot...")
-        # En local, solo ejecutar el bot
-        run_bot()
+    
+    # Ejecutar el bot UNA SOLA VEZ
+    print("🤖 Iniciando bot principal...")
+    run_bot()
