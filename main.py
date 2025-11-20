@@ -8,6 +8,7 @@ import psycopg
 from datetime import datetime, timedelta
 import json
 import telegram
+import time
 from dotenv import load_dotenv
 
 app = Flask(__name__)
@@ -4275,7 +4276,7 @@ if __name__ == "__main__":
         print("🌐 Detectado entorno Render - Iniciando Flask...")
         flask_thread = threading.Thread(target=run_flask, daemon=True)
         flask_thread.start()
-        time.sleep(3)
+        time.sleep(3)  # ← AHORA time ESTÁ IMPORTADO
     
     # Ejecutar el bot UNA SOLA VEZ
     print("🤖 Iniciando bot principal...")
