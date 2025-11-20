@@ -4152,29 +4152,141 @@ def run_bot():
         .build()
     )
     
-    # Handlers básicos
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    # =============================================
+    # 🎯 TODOS LOS HANDLERS COMPLETOS
+    # =============================================
     
-    # JobQueue para incremento automático
+    # 1. Handlers de comandos básicos para usuarios
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("cancelar", cancelar))
+    application.add_handler(CommandHandler("miperfil", miperfil))
+    application.add_handler(CommandHandler("pagarealizado", pagarealizado))
+    application.add_handler(CommandHandler("mistatus", mistatus))
+    
+    # 2. Handlers para sistema de puntos y referidos
+    application.add_handler(CommandHandler("mispuntos", mispuntos))
+    application.add_handler(CommandHandler("referidos", referidos))
+    
+    # 3. Handlers para sistema de asignación administrativa
+    application.add_handler(CommandHandler("verasignaciones", ver_asignaciones))
+    
+    # 4. Handlers modificados para productos (sin carrito)
+    application.add_handler(CommandHandler("catalogo", catalogo_solo_lectura))
+    application.add_handler(CommandHandler("misplanes", mis_planes_mejorado))
+    
+    # 5. Handlers de administrador
+    application.add_handler(CommandHandler("adminverproductos", admin_ver_productos))
+    application.add_handler(CommandHandler("adminagregarproducto", admin_agregar_producto))
+    application.add_handler(CommandHandler("verpagos", verpagos))
+    application.add_handler(CommandHandler("verpagostodos", verpagostodos))
+    application.add_handler(CommandHandler("verusuarios", verusuarios))
+    application.add_handler(CommandHandler("estadocontador", estado_contador))
+    application.add_handler(CommandHandler("pausarcontador", pausar_contador))
+    application.add_handler(CommandHandler("reanudarcontador", reanudar_contador))
+    application.add_handler(CommandHandler("configurarsemanas", configurar_semanas))
+    
+    # 6. Handlers para sistema de puntos (admin)
+    application.add_handler(CommandHandler("rankingpuntos", ranking_puntos))
+    application.add_handler(CommandHandler("verreferidos", ver_referidos_pendientes))
+    application.add_handler(CommandHandler("vaciarranking", vaciar_ranking_puntos))
+    
+    # Handlers para edición de puntos (admin)
+    application.add_handler(CommandHandler("agregarpuntos", agregar_puntos_admin))
+    application.add_handler(CommandHandler("quitarpuntos", quitar_puntos_admin))
+    application.add_handler(CommandHandler("establecerpuntos", establecer_puntos_admin))
+        
+    # 7. Handlers para incremento de semanas
+    application.add_handler(CommandHandler("incrementarsemana", incrementar_semana_manual))
+    application.add_handler(CommandHandler("forzarincremento", forzar_incremento))
+    
+    # 8. Handler para comandos dinámicos de asignación
+    application.add_handler(MessageHandler(
+        filters.Regex(r'^\/(verimagen|confirmar|rechazar|borrar|borrarusuario|editarproducto|eliminarproducto|verpago|borrarpago|verificarreferido|rechazarreferido|verpuntosusuario)_\d+'),
+        handle_dynamic_commands
+    ))
+
+    # Handler para asignación por nombre
+    application.add_handler(CommandHandler("asignar", buscar_usuario_asignar))
+    
+    # 9. Handler para mensajes normales
+    application.add_handler(MessageHandler(
+        filters.TEXT & ~filters.COMMAND,
+        handle_message
+    ))
+    
+    # 10. Handlers de archivos
+    application.add_handler(MessageHandler(filters.PHOTO, handle_image))
+    application.add_handler(MessageHandler(filters.Document.IMAGE, handle_image))
+    application.add_handler(MessageHandler(filters.Document.ALL, handle_all_documents))
+    
+    # 11. Handler de botones de asignación
+    application.add_handler(CallbackQueryHandler(button_handler_asignacion, pattern=r'^asignar_.*'))
+    
+    # 12. Handler de botones para sistema de puntos
+    application.add_handler(CallbackQueryHandler(button_handler_puntos, pattern=r'^(compartir_codigo|ver_mis_puntos|ir_a_referidos|actualizar_puntos)$'))
+    
+    # 13. Handler de botones generales (para otros botones)
+    application.add_handler(CallbackQueryHandler(button_handler))
+    
+    # ✅ AGREGAR JOB PARA INCREMENTO AUTOMÁTICO
     try:
         if hasattr(application, 'job_queue') and application.job_queue is not None:
             application.job_queue.run_repeating(
-                lambda context: print("🔄 Incremento automático ejecutado"), 
-                interval=604800,
-                first=10
+                incrementar_semanas_automatico, 
+                interval=604800,  # 7 días en segundos
+                first=10  # Empezar después de 10 segundos
             )
-            print("✅ JobQueue configurado correctamente")
+            print("✅ JobQueue configurado correctamente para incremento automático")
+            job_queue_status = "ACTIVADO (cada 7 días)"
+        else:
+            print("⚠️ JobQueue no disponible. El incremento automático no funcionará.")
+            job_queue_status = "NO DISPONIBLE"
     except Exception as e:
         print(f"❌ Error al configurar JobQueue: {e}")
+        job_queue_status = "ERROR EN CONFIGURACIÓN"
     
-    # Manejo de errores
+    # ✅ Manejo de errores
     application.add_error_handler(error_handler)
     
     print("✅ BOT CONFIGURADO CORRECTAMENTE")
+    print(f"🔄 INCREMENTO AUTOMÁTICO: {job_queue_status}")
     
-    # Iniciar el bot
+    # 3. Iniciar el bot en el HILO PRINCIPAL
+    print("\n" + "="*60)
+    print("🤖 BOT DE PLANES DE PAGO - SISTEMA COMPLETO CON PUNTOS")
+    print("="*60)
+    print("📍 COMANDOS PARA USUARIOS:")
+    print("   /start - Registrarse en el sistema")
+    print("   /catalogo - Ver productos (solo lectura)")
+    print("   /misplanes - Ver plan asignado")
+    print("   /miperfil - Información personal")
+    print("   /mispuntos - Sistema de puntos")
+    print("   /referidos - Invitar amigos")
+    print("   /pagarealizado - Registrar pago")
+    print("   /mistatus - Estado de mis pagos")
+    print("\n📍 COMANDOS PARA ADMIN:")
+    print("   /verasignaciones - Ver todas las asignaciones")
+    print("   /asignar_X - Asignar productos a usuario")
+    print("   /adminverproductos - Ver catálogo completo")
+    print("   /adminagregarproducto - Agregar producto")
+    print("   /verpagos - Ver pagos pendientes")
+    print("   /verpagostodos - Ver TODOS los pagos")
+    print("   /verusuarios - Ver todos los usuarios")
+    print("   /estadocontador - Estado del sistema")
+    print("   /pausarcontador - Pausar contador global")
+    print("   /reanudarcontador - Reanudar contador global")
+    print("   /configurarsemanas - Configurar semanas")
+    print("   /incrementarsemana - Incremento manual")
+    print("   /forzarincremento - Forzar incremento")
+    print("   /rankingpuntos - Ranking de puntos")
+    print("   /verreferidos - Referidos pendientes")
+    print("   /verpuntosusuario_ID - Puntos de usuario")
+    print("   /vaciarranking - Vaciar sistema de puntos")
+    print("="*60 + "\n")
+    
     print("🟢 BOT INICIADO - Escuchando mensajes...")
+    print("📍 Los usuarios pueden escribir /start al bot")
+    print("📍 Servicio web activo en: https://bot-sususemanal.onrender.com")
     
     try:
         application.run_polling()
@@ -4184,6 +4296,7 @@ def run_bot():
         print(f"❌ Error en el bot: {e}")
         import traceback
         traceback.print_exc()
+
 
 def run_flask():
     """Ejecuta Flask en un puerto específico para Render"""
@@ -4206,3 +4319,4 @@ if __name__ == "__main__":
     # Ejecutar el bot inmediatamente
     print("🤖 Iniciando bot principal...")
     run_bot()
+
