@@ -4151,6 +4151,7 @@ def run_bot():
         .pool_timeout(30)
         .build()
     )
+    
     # =============================================
     # 🎯 TODOS LOS HANDLERS COMPLETOS
     # =============================================
@@ -4206,6 +4207,7 @@ def run_bot():
 
     # 🆕 NUEVO: Handler para asignación por nombre
     application.add_handler(CommandHandler("asignar", buscar_usuario_asignar))
+    
     # 9. Handler para mensajes normales
     application.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND,
@@ -4249,8 +4251,52 @@ def run_bot():
     print("✅ BOT CONFIGURADO CORRECTAMENTE")
     print(f"🔄 INCREMENTO AUTOMÁTICO: {job_queue_status}")
     
-    # 3. Iniciar Flask en un hilo separado (para Render)
-    print("🌐 Iniciando servidor web Flask en segundo plano...")
+    # ⚠️ ELIMINADO: No iniciar Flask aquí - ya se inicia en el main
+    # 3. Iniciar el bot en el HILO PRINCIPAL
+    print("\n" + "="*60)
+    print("🤖 BOT DE PLANES DE PAGO - SISTEMA COMPLETO CON PUNTOS")
+    print("="*60)
+    print("📍 COMANDOS PARA USUARIOS:")
+    print("   /start - Registrarse en el sistema")
+    print("   /catalogo - Ver productos (solo lectura)")
+    print("   /misplanes - Ver plan asignado")
+    print("   /miperfil - Información personal")
+    print("   /mispuntos - Sistema de puntos")
+    print("   /referidos - Invitar amigos")
+    print("   /pagarealizado - Registrar pago")
+    print("   /mistatus - Estado de mis pagos")
+    print("\n📍 COMANDOS PARA ADMIN:")
+    print("   /verasignaciones - Ver todas las asignaciones")
+    print("   /asignar_X - Asignar productos a usuario")
+    print("   /adminverproductos - Ver catálogo completo")
+    print("   /adminagregarproducto - Agregar producto")
+    print("   /verpagos - Ver pagos pendientes")
+    print("   /verpagostodos - Ver TODOS los pagos")
+    print("   /verusuarios - Ver todos los usuarios")
+    print("   /estadocontador - Estado del sistema")
+    print("   /pausarcontador - Pausar contador global")
+    print("   /reanudarcontador - Reanudar contador global")
+    print("   /configurarsemanas - Configurar semanas")
+    print("   /incrementarsemana - Incremento manual")
+    print("   /forzarincremento - Forzar incremento")
+    print("   /rankingpuntos - Ranking de puntos")
+    print("   /verreferidos - Referidos pendientes")
+    print("   /verpuntosusuario_ID - Puntos de usuario")
+    print("   /vaciarranking - Vaciar sistema de puntos")
+    print("="*60 + "\n")
+    
+    print("🟢 BOT INICIADO - Escuchando mensajes...")
+    print("📍 Los usuarios pueden escribir /start al bot")
+    print("📍 Servicio web activo en: https://bot-sususemanal.onrender.com")
+    
+    try:
+        application.run_polling()
+    except KeyboardInterrupt:
+        print("⏹️ Bot detenido por el usuario")
+    except Exception as e:
+        print(f"❌ Error en el bot: {e}")
+        import traceback
+        traceback.print_exc()
     
 def run_flask():
     """Ejecuta Flask en un puerto específico para Render"""
@@ -4281,3 +4327,4 @@ if __name__ == "__main__":
     # Ejecutar el bot UNA SOLA VEZ
     print("🤖 Iniciando bot principal...")
     run_bot()
+
