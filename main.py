@@ -16,6 +16,11 @@ app = Flask(__name__)
 def health_check():
     return "Bot is running", 200
 
+@app.route('/health')
+def health():
+    return "OK", 200
+
+
 # Configuración
 # Cargar variables de entorno
 load_dotenv()
@@ -4125,14 +4130,13 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f'❌ Error no manejado: {error}')
 
 
-def main():
-    """Función principal - BOT EN HILO PRINCIPAL"""
-    print("🎯 INICIANDO BOT DE TELEGRAM EN RENDER...")
+def run_bot():
+    """Ejecuta el bot de Telegram en el hilo principal"""
+    print("🎯 INICIANDO BOT DE TELEGRAM...")
     
     # 1. Inicializar base de datos
     print("🗄️ Inicializando base de datos...")
     init_db()
-    verificar_base_datos()
     
     # 2. Configurar el bot de Telegram
     print("🤖 Configurando bot de Telegram...")
@@ -4146,7 +4150,6 @@ def main():
         .pool_timeout(30)
         .build()
     )
-    
     # =============================================
     # 🎯 TODOS LOS HANDLERS COMPLETOS
     # =============================================
@@ -4249,81 +4252,32 @@ def main():
     print("🌐 Iniciando servidor web Flask en segundo plano...")
     
     def run_flask():
+    """Ejecuta Flask en un puerto específico para Render"""
+    try:
         port = int(os.environ.get('PORT', 10000))
         print(f"🌐 Flask ejecutándose en puerto {port}")
         app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
-    
-    flask_thread = threading.Thread(target=run_flask, daemon=True)
-    flask_thread.start()
-    
-    # 4. Iniciar el bot en el HILO PRINCIPAL
-    print("\n" + "="*60)
-    print("🤖 BOT DE PLANES DE PAGO - SISTEMA COMPLETO CON PUNTOS")
-    print("="*60)
-    print("📍 COMANDOS PARA USUARIOS:")
-    print("   /start - Registrarse en el sistema")
-    print("   /catalogo - Ver productos (solo lectura)")
-    print("   /misplanes - Ver plan asignado")
-    print("   /miperfil - Información personal")
-    print("   /mispuntos - Sistema de puntos")
-    print("   /referidos - Invitar amigos")
-    print("   /pagarealizado - Registrar pago")
-    print("   /mistatus - Estado de mis pagos")
-    print("\n📍 COMANDOS PARA ADMIN (5908252094, 7228946245, 1074083869):")  # ← ACTUALIZADO
-    print("   /verasignaciones - Ver todas las asignaciones")
-    print("   /asignar_X - Asignar productos a usuario")
-    print("   /adminverproductos - Ver catálogo completo")
-    print("   /adminagregarproducto - Agregar producto")
-    print("   /verpagos - Ver pagos pendientes")
-    print("   /verpagostodos - Ver TODOS los pagos")
-    print("   /verusuarios - Ver todos los usuarios")
-    print("   /estadocontador - Estado del sistema")
-    print("   /pausarcontador - Pausar contador global")
-    print("   /reanudarcontador - Reanudar contador global")
-    print("   /configurarsemanas - Configurar semanas")
-    print("   /incrementarsemana - Incremento manual")
-    print("   /forzarincremento - Forzar incremento")
-    print("   /rankingpuntos - Ranking de puntos")
-    print("   /verreferidos - Referidos pendientes")
-    print("   /verpuntosusuario_ID - Puntos de usuario")
-    print("   /vaciarranking - Vaciar sistema de puntos")
-    print("="*60 + "\n")
-    
-    print("🟢 BOT INICIADO - Escuchando mensajes...")
-    print("📍 Los usuarios pueden escribir /start al bot")
-    print("📍 Servicio web activo en: https://bot-sususemanal.onrender.com")
-    
-    try:
-        application.run_polling()
-    except KeyboardInterrupt:
-        print("⏹️ Bot detenido por el usuario")
     except Exception as e:
-        print(f"❌ Error en el bot: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"❌ Error en Flask: {e}")
 
 if __name__ == "__main__":
     print("🚀 INICIANDO SISTEMA COMPLETO...")
     
-    # SOLUCIÓN: Ejecutar el bot en el hilo principal y Flask en segundo plano
-    def run_flask():
-        """Ejecutar Flask en puerto diferente"""
-        try:
-            port = int(os.environ.get('PORT', 10000))
-            print(f"🌐 Flask ejecutándose en puerto {port}")
-            app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
-        except Exception as e:
-            print(f"❌ Error en Flask: {e}")
+    # SOLUCIÓN: Solo iniciar Flask si estamos en Render
+    # En desarrollo local, solo ejecutar el bot
     
-    # Iniciar Flask en segundo plano
-    flask_thread = threading.Thread(target=run_flask, daemon=True)
-    flask_thread.start()
-    
-    # Esperar un momento para que Flask se inicie
-    import time
-    time.sleep(2)
-    
-    # Ejecutar el bot en el HILO PRINCIPAL (esto es crucial)
-    print("🤖 Iniciando bot en hilo principal...")
-    main()
-
+    if 'RENDER' in os.environ or 'PORT' in os.environ:
+        print("🌐 Detectado entorno Render - Iniciando Flask en segundo plano...")
+        # En Render, iniciar Flask en segundo plano
+        flask_thread = threading.Thread(target=run_flask, daemon=True)
+        flask_thread.start()
+        
+        # Esperar un momento para que Flask se inicie
+        time.sleep(3)
+        
+        # Luego ejecutar el bot
+        run_bot()
+    else:
+        print("💻 Entorno local - Ejecutando solo el bot...")
+        # En local, solo ejecutar el bot
+        run_bot()
