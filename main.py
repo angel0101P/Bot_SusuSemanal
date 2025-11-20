@@ -4251,7 +4251,7 @@ def run_bot():
     # 3. Iniciar Flask en un hilo separado (para Render)
     print("🌐 Iniciando servidor web Flask en segundo plano...")
     
-    def run_flask():
+def run_flask():
     """Ejecuta Flask en un puerto específico para Render"""
     try:
         port = int(os.environ.get('PORT', 10000))
@@ -4273,6 +4273,7 @@ if __name__ == "__main__":
         flask_thread.start()
         
         # Esperar un momento para que Flask se inicie
+        import time
         time.sleep(3)
         
         # Luego ejecutar el bot
