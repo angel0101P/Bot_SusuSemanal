@@ -4156,7 +4156,38 @@ async def adelantar_semana_completo(update: Update, context: ContextTypes.DEFAUL
         conn.commit()
         conn.close()
         
-        # Calcular NUEVA fecha de próximo avance
+        # 3. ✅ REPROGRAMAR EL JOB AUTOMÁTICO (CORRECCIÓN IMPLEMENTADA)
+        job_queue = context.application.job_queue
+        if job_queue:
+            try:
+                # Eliminar todos los jobs de incremento existentes
+                jobs = job_queue.get_jobs_by_name('incremento_automatico')
+                for job in jobs:
+                    job.schedule_removal()
+                
+                # También eliminar jobs recurrentes si existen
+                recurring_jobs = job_queue.get_jobs_by_name('incremento_automatico_recurring')
+                for job in recurring_jobs:
+                    job.schedule_removal()
+                
+                print("✅ Jobs anteriores eliminados")
+                
+                # Crear nuevo job que se ejecutará en exactamente 7 días desde AHORA
+                job_queue.run_repeating(
+                    incrementar_semanas_automatico,
+                    interval=604800,  # 7 días en segundos
+                    first=604800,     # Primera ejecución en 7 días desde ahora
+                    name='incremento_automatico'
+                )
+                
+                print("✅ Nuevo job programado para 7 días")
+                
+            except Exception as e:
+                print(f"❌ Error al reprogramar job: {e}")
+                # Si falla la reprogramación, al menos mantener el funcionamiento básico
+                await update.message.reply_text("⚠️ Adelanto realizado pero hubo un error al reprogramar el ciclo automático")
+        
+        # 4. Calcular NUEVA fecha de próximo avance
         ahora = datetime.now()
         proximo_avance = ahora + timedelta(days=7)
         
@@ -4165,20 +4196,18 @@ async def adelantar_semana_completo(update: Update, context: ContextTypes.DEFAUL
             f"📈 **Planes afectados:** {planes_afectados}\n"
             f"📋 **Total planes activos:** {total_planes}\n"
             f"⏸️ **Planes pausados:** {planes_pausados}\n\n"
-            f"🔄 **PRÓXIMO AVANCE AUTOMÁTICO:**\n"
+            f"🔄 **PRÓXIMO AVANCE AUTOMÁTICO REPROGRAMADO:**\n"
             f"📅 **Nueva fecha:** {proximo_avance.strftime('%d/%m/%Y %H:%M')}\n"
             f"⏰ **En approx:** 7 días\n\n"
-            f"✅ **El ciclo semanal ha sido reprogramado**"
+            f"✅ **El ciclo semanal ha sido reprogramado correctamente**"
         )
         
-        # Notificar usuarios
+        # 5. Notificar usuarios
         await notificar_usuarios_incremento(context, "adelanto_completo")
                     
     except Exception as e:
         print(f"❌ Error en adelanto completo: {e}")
         await update.message.reply_text("❌ Error al adelantar semanas")
-
-
 
 
 def main():
@@ -4385,4 +4414,5 @@ if __name__ == "__main__":
     # Ejecutar el bot en el HILO PRINCIPAL (esto es crucial)
     print("🤖 Iniciando bot en hilo principal...")
     main()
+
 
