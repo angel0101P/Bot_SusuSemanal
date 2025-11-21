@@ -1,6 +1,6 @@
 import os
 import threading
-from flask import Flask
+from flask import Flask  # ← AGREGAR ESTE IMPORT
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler
@@ -8,47 +8,13 @@ import psycopg
 from datetime import datetime, timedelta
 import json
 import telegram
-import time
 from dotenv import load_dotenv
-import requests
 
 app = Flask(__name__)
 
 @app.route('/')
 def health_check():
     return "Bot is running", 200
-
-@app.route('/health')
-def health():
-    return "OK", 200
-
-@app.route('/bot-status')
-def bot_status():
-    """Endpoint para verificar el estado del bot"""
-    try:
-        response = requests.get(f"https://api.telegram.org/bot{TOKEN}/getMe", timeout=10)
-        
-        if response.status_code == 200:
-            bot_info = response.json()
-            return {
-                "status": "online",
-                "bot_username": bot_info['result']['username'],
-                "bot_name": bot_info['result']['first_name'],
-                "timestamp": datetime.now().isoformat()
-            }, 200
-        else:
-            return {
-                "status": "error", 
-                "message": f"Telegram API error: {response.status_code}",
-                "timestamp": datetime.now().isoformat()
-            }, 500
-            
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": str(e),
-            "timestamp": datetime.now().isoformat()
-        }, 500
 
 # Configuración
 # Cargar variables de entorno
@@ -59,52 +25,6 @@ TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 DATABASE_URL = os.getenv('DATABASE_URL')
 # IDs de administrador actualizados
 ADMIN_IDS = [5908252094, 7228946245, 1074083869]  # ← IDs ACTUALIZADOS
-
-# =============================================
-# 🎯 VERIFICACIONES INICIALES MEJORADAS
-# =============================================
-
-def verificar_entorno():
-    """Verifica que todas las variables de entorno estén configuradas"""
-    print("🔍 VERIFICANDO ENTORNO...")
-    
-    # Verificar token
-    if not TOKEN:
-        print("❌ ERROR CRÍTICO: TELEGRAM_BOT_TOKEN no está configurado")
-        return False
-    else:
-        print("✅ TELEGRAM_BOT_TOKEN: Configurado")
-    
-    # Verificar base de datos
-    if not DATABASE_URL:
-        print("❌ ERROR CRÍTICO: DATABASE_URL no está configurado")
-        return False
-    else:
-        print("✅ DATABASE_URL: Configurado")
-    
-    # Verificar admins
-    if not ADMIN_IDS:
-        print("⚠️ ADVERTENCIA: ADMIN_IDS está vacío")
-    else:
-        print(f"✅ ADMIN_IDS: {ADMIN_IDS}")
-    
-    return True
-
-def test_bot_connection():
-    """Testea la conexión con la API de Telegram"""
-    print("🔍 TESTEANDO CONEXIÓN CON TELEGRAM...")
-    try:
-        response = requests.get(f"https://api.telegram.org/bot{TOKEN}/getMe")
-        if response.status_code == 200:
-            bot_info = response.json()
-            print(f"✅ BOT CONECTADO: @{bot_info['result']['username']}")
-            return True
-        else:
-            print(f"❌ ERROR EN CONEXIÓN: {response.status_code} - {response.text}")
-            return False
-    except Exception as e:
-        print(f"❌ ERROR EN CONEXIÓN: {e}")
-        return False
 
 # Función para verificar si es admin
 def is_admin(user_id: int) -> bool:
@@ -849,6 +769,9 @@ async def rechazar_referido(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"❌ Error al rechazar referido: {e}")
         await update.message.reply_text("❌ Error al rechazar el referido")
         
+        
+       
+
 # =============================================
 # 🆕 SISTEMA DE EDICIÓN DE PUNTOS (ADMIN)
 # =============================================
@@ -1155,6 +1078,7 @@ async def establecer_puntos_admin(update: Update, context: ContextTypes.DEFAULT_
     except Exception as e:
         print(f"❌ Error en establecer_puntos_admin: {e}")
         await update.message.reply_text("❌ Error al procesar la solicitud")       
+       
         
 # =============================================
 # 🆕 FUNCIÓN PARA VACIAR RANKING DE PUNTOS
@@ -1525,7 +1449,6 @@ async def notificar_usuarios_incremento(context: ContextTypes.DEFAULT_TYPE, tipo
         conn.close()
     except Exception as e:
         print(f"❌ Error en notificación: {e}")
-
 # =============================================
 # 🆕 MODIFICACIONES A FUNCIONES EXISTENTES
 # =============================================
@@ -3153,7 +3076,7 @@ async def configurar_semanas(update: Update, context: ContextTypes.DEFAULT_TYPE)
             await update.message.reply_text("❌ El número de semanas debe ser un número válido")
             return
 
-    # Mostrar opciones de semanas
+    # Mostrar opciones de semanas (código existente se mantiene igual)
     keyboard = [
         [InlineKeyboardButton("🔄 4 Semanas", callback_data="semanas_4")],
         [InlineKeyboardButton("🔄 8 Semanas", callback_data="semanas_8")],
@@ -3178,6 +3101,34 @@ async def configurar_semanas(update: Update, context: ContextTypes.DEFAULT_TYPE)
         f"🔢 **Actual:** {semanas_actuales} semanas\n"
         f"📊 **Contador:** {'🟢 ACTIVO' if contador_activo else '🔴 PAUSADO'}\n\n"
         f"⚠️ **IMPORTANTE:** Al cambiar las semanas, todos los contadores se reiniciarán a 0.\n\n"
+        f"Selecciona el número de semanas para los planes de pago:",
+        reply_markup=reply_markup
+    )
+
+    # Mostrar opciones de semanas
+    keyboard = [
+        [InlineKeyboardButton("🔄 4 Semanas", callback_data="semanas_4")],
+        [InlineKeyboardButton("🔄 8 Semanas", callback_data="semanas_8")],
+        [InlineKeyboardButton("🔄 12 Semanas", callback_data="semanas_12")],
+        [InlineKeyboardButton("🔄 16 Semanas", callback_data="semanas_16")],
+        [InlineKeyboardButton("🔄 20 Semanas", callback_data="semanas_20")],
+        [InlineKeyboardButton("✏️ Personalizado", callback_data="semanas_personalizado")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT semanas, contador_activo FROM config_pagos LIMIT 1")
+    config = cursor.fetchone()
+    conn.close()
+    
+    semanas_actuales = config[0] if config else 10
+    contador_activo = config[1] if config else True
+    
+    await update.message.reply_text(
+        f"⚙️ **CONFIGURAR SEMANAS DE PAGO**\n\n"
+        f"🔢 **Actual:** {semanas_actuales} semanas\n"
+        f"📊 **Contador:** {'🟢 ACTIVO' if contador_activo else '🔴 PAUSADO'}\n\n"
         f"Selecciona el número de semanas para los planes de pago:",
         reply_markup=reply_markup
     )
@@ -3340,6 +3291,9 @@ async def borrarpago_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"❌ Error en borrarpago_admin: {e}")
         await update.message.reply_text("❌ Error al procesar la eliminación")
         
+        
+        
+        
 async def buscar_usuario_asignar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Buscar usuario por nombre para asignar productos"""
     if not is_admin(update.effective_user.id):  # ← ACTUALIZADO
@@ -3493,6 +3447,7 @@ async def iniciar_asignacion_productos(update: Update, context: ContextTypes.DEF
     else:
         await update.message.reply_text(mensaje, reply_markup=reply_markup)
 
+
 # =============================================
 # MANEJO DE BOTONES GENERALES
 # =============================================
@@ -3505,7 +3460,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(f"🟡 BOTÓN PRESIONADO: {query.data}")
     user_id = query.from_user.id
     
-    # 🆕 NUEVO: MANEJAR SELECCIÓN DE USUARIO PARA ASIGNACIÓN
+    
+        # 🆕 NUEVO: MANEJAR SELECCIÓN DE USUARIO PARA ASIGNACIÓN
     if query.data.startswith("seleccionar_usuario_"):
         if not is_admin(user_id):  # ← ACTUALIZADO
             await query.answer("❌ No tienes permisos", show_alert=True)
@@ -3530,7 +3486,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("❌ **Búsqueda cancelada**")
 
     # CONFIGURAR SEMANAS (SOLO ADMIN)
-    elif query.data.startswith("semanas_"):
+    if query.data.startswith("semanas_"):
         if not is_admin(user_id):  # ← ACTUALIZADO
             await query.answer("❌ No tienes permisos", show_alert=True)
             return
@@ -3735,7 +3691,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data.startswith("borrarpago_no_"):
         await query.edit_message_text("❌ **Eliminación cancelada**\n\nEl pago se mantiene en el sistema.")
         
-    # VACIAR PUNTOS CONFIRMADO
+        # VACIAR PUNTOS CONFIRMADO
     elif query.data == "vaciar_puntos_si":
         if not is_admin(user_id):  # ← ACTUALIZADO
             await query.answer("❌ No tienes permisos", show_alert=True)
@@ -3777,7 +3733,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == "vaciar_puntos_no":
         await query.edit_message_text("❌ **Operación cancelada**\n\nEl sistema de puntos se mantiene intacto.")
         
-    # BOTONES PARA INCREMENTO MANUAL
+        
+        # BOTONES PARA INCREMENTO MANUAL
     elif query.data == "reanudar_y_incrementar":
         if not is_admin(user_id):  # ← ACTUALIZADO
             await query.answer("❌ No tienes permisos", show_alert=True)
@@ -3845,7 +3802,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             print(f"❌ Error: {e}")
             await query.edit_message_text("❌ Error al forzar incremento")
-
+        
 # =============================================
 # FUNCIONES DE MANEJO DE MENSAJES
 # =============================================
@@ -4167,56 +4124,87 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         print(f'❌ Error no manejado: {error}')
 
-def run_bot():
-    """Ejecuta el bot de Telegram en el hilo principal - VERSIÓN MEJORADA"""
-    print("🎯 INICIANDO BOT DE TELEGRAM - VERSIÓN MEJORADA...")
-    
-    # 1. Verificar entorno
-    if not verificar_entorno():
-        print("❌ NO SE PUEDE INICIAR EL BOT - Faltan configuraciones críticas")
+
+
+async def adelantar_semana_completo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Adelanta la semana Y reprograma el próximo avance automático"""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("❌ No tienes permisos de administrador")
         return
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # 1. Adelantar semanas
+        cursor.execute("""
+            UPDATE planes_pago 
+            SET semanas_completadas = semanas_completadas + 1,
+                fecha_ultimo_pago = CURRENT_TIMESTAMP
+            WHERE estado = 'activo' 
+            AND semanas_completadas < semanas
+        """)
+        planes_afectados = cursor.rowcount
+        
+        # 2. Obtener estadísticas
+        cursor.execute("SELECT COUNT(*) FROM planes_pago WHERE estado = 'activo'")
+        total_planes = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM planes_pago WHERE contador_pausado = TRUE AND estado = 'activo'")
+        planes_pausados = cursor.fetchone()[0]
+        
+        conn.commit()
+        conn.close()
+        
+        # Calcular NUEVA fecha de próximo avance
+        ahora = datetime.now()
+        proximo_avance = ahora + timedelta(days=7)
+        
+        await update.message.reply_text(
+            f"🚀 **ADELANTO COMPLETO REALIZADO**\n\n"
+            f"📈 **Planes afectados:** {planes_afectados}\n"
+            f"📋 **Total planes activos:** {total_planes}\n"
+            f"⏸️ **Planes pausados:** {planes_pausados}\n\n"
+            f"🔄 **PRÓXIMO AVANCE AUTOMÁTICO:**\n"
+            f"📅 **Nueva fecha:** {proximo_avance.strftime('%d/%m/%Y %H:%M')}\n"
+            f"⏰ **En approx:** 7 días\n\n"
+            f"✅ **El ciclo semanal ha sido reprogramado**"
+        )
+        
+        # Notificar usuarios
+        await notificar_usuarios_incremento(context, "adelanto_completo")
+                    
+    except Exception as e:
+        print(f"❌ Error en adelanto completo: {e}")
+        await update.message.reply_text("❌ Error al adelantar semanas")
+
+
+
+
+def main():
+    """Función principal - BOT EN HILO PRINCIPAL"""
+    print("🎯 INICIANDO BOT DE TELEGRAM EN RENDER...")
     
-    # 2. Testear conexión con Telegram
-    if not test_bot_connection():
-        print("❌ NO SE PUEDE INICIAR EL BOT - Error de conexión con Telegram")
-        return
-    
-    # 3. Inicializar base de datos
+    # 1. Inicializar base de datos
     print("🗄️ Inicializando base de datos...")
-    try:
-        init_db()
-        print("✅ Base de datos inicializada correctamente")
-    except Exception as e:
-        print(f"❌ Error al inicializar BD: {e}")
-        return
+    init_db()
+    verificar_base_datos()
     
-    # 4. Verificar datos existentes
-    try:
-        pagos, usuarios, productos, planes, semanas = verificar_base_datos()
-        print(f"📊 DATOS EXISTENTES - Usuarios: {usuarios}, Productos: {productos}, Planes: {planes}")
-    except Exception as e:
-        print(f"⚠️ Error al verificar datos existentes: {e}")
-    
-    # 5. Configurar el bot de Telegram
+    # 2. Configurar el bot de Telegram
     print("🤖 Configurando bot de Telegram...")
     
-    try:
-        application = (
-            Application.builder()
-            .token(TOKEN)
-            .read_timeout(30)
-            .write_timeout(30) 
-            .connect_timeout(30)
-            .pool_timeout(30)
-            .build()
-        )
-        print("✅ Application construida correctamente")
-    except Exception as e:
-        print(f"❌ Error al construir Application: {e}")
-        return
+    application = (
+        Application.builder()
+        .token(TOKEN)
+        .read_timeout(30)
+        .write_timeout(30) 
+        .connect_timeout(30)
+        .pool_timeout(30)
+        .build()
+    )
     
     # =============================================
-    # 🎯 CONFIGURAR HANDLERS
+    # 🎯 TODOS LOS HANDLERS COMPLETOS
     # =============================================
     
     # 1. Handlers de comandos básicos para usuarios
@@ -4226,7 +4214,7 @@ def run_bot():
     application.add_handler(CommandHandler("pagarealizado", pagarealizado))
     application.add_handler(CommandHandler("mistatus", mistatus))
     
-    # 2. Handlers para sistema de puntos y referidos
+    # 🆕 2. Handlers para sistema de puntos y referidos
     application.add_handler(CommandHandler("mispuntos", mispuntos))
     application.add_handler(CommandHandler("referidos", referidos))
     
@@ -4236,6 +4224,9 @@ def run_bot():
     # 4. Handlers modificados para productos (sin carrito)
     application.add_handler(CommandHandler("catalogo", catalogo_solo_lectura))
     application.add_handler(CommandHandler("misplanes", mis_planes_mejorado))
+
+    # 🆕 NUEVO COMANDO PARA ADELANTO COMPLETO
+    application.add_handler(CommandHandler("adelantarcompleto", adelantar_semana_completo))
     
     # 5. Handlers de administrador
     application.add_handler(CommandHandler("adminverproductos", admin_ver_productos))
@@ -4248,29 +4239,28 @@ def run_bot():
     application.add_handler(CommandHandler("reanudarcontador", reanudar_contador))
     application.add_handler(CommandHandler("configurarsemanas", configurar_semanas))
     
-    # 6. Handlers para sistema de puntos (admin)
+    # 🆕 6. Handlers para sistema de puntos (admin)
     application.add_handler(CommandHandler("rankingpuntos", ranking_puntos))
     application.add_handler(CommandHandler("verreferidos", ver_referidos_pendientes))
     application.add_handler(CommandHandler("vaciarranking", vaciar_ranking_puntos))
     
-    # Handlers para edición de puntos (admin)
+    # 🆕 Handlers para edición de puntos (admin)
     application.add_handler(CommandHandler("agregarpuntos", agregar_puntos_admin))
     application.add_handler(CommandHandler("quitarpuntos", quitar_puntos_admin))
     application.add_handler(CommandHandler("establecerpuntos", establecer_puntos_admin))
         
-    # 7. Handlers para incremento de semanas
+    # 7. NUEVOS HANDLERS PARA INCREMENTO DE SEMANAS
     application.add_handler(CommandHandler("incrementarsemana", incrementar_semana_manual))
     application.add_handler(CommandHandler("forzarincremento", forzar_incremento))
     
-    # 8. Handler para comandos dinámicos de asignación
+    # 8. Handler para comandos dinámicos de asignación (EXCLUYENDO /asignar)
     application.add_handler(MessageHandler(
         filters.Regex(r'^\/(verimagen|confirmar|rechazar|borrar|borrarusuario|editarproducto|eliminarproducto|verpago|borrarpago|verificarreferido|rechazarreferido|verpuntosusuario)_\d+'),
         handle_dynamic_commands
     ))
 
-    # Handler para asignación por nombre
+    # 🆕 NUEVO: Handler para asignación por nombre
     application.add_handler(CommandHandler("asignar", buscar_usuario_asignar))
-    
     # 9. Handler para mensajes normales
     application.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND,
@@ -4285,14 +4275,13 @@ def run_bot():
     # 11. Handler de botones de asignación
     application.add_handler(CallbackQueryHandler(button_handler_asignacion, pattern=r'^asignar_.*'))
     
-    # 12. Handler de botones para sistema de puntos
+    # 🆕 12. Handler de botones para sistema de puntos
     application.add_handler(CallbackQueryHandler(button_handler_puntos, pattern=r'^(compartir_codigo|ver_mis_puntos|ir_a_referidos|actualizar_puntos)$'))
     
     # 13. Handler de botones generales (para otros botones)
     application.add_handler(CallbackQueryHandler(button_handler))
     
     # ✅ AGREGAR JOB PARA INCREMENTO AUTOMÁTICO
-    job_queue_status = "NO CONFIGURADO"
     try:
         if hasattr(application, 'job_queue') and application.job_queue is not None:
             application.job_queue.run_repeating(
@@ -4315,66 +4304,85 @@ def run_bot():
     print("✅ BOT CONFIGURADO CORRECTAMENTE")
     print(f"🔄 INCREMENTO AUTOMÁTICO: {job_queue_status}")
     
-    # 6. Iniciar el bot
+    # 3. Iniciar Flask en un hilo separado (para Render)
+    print("🌐 Iniciando servidor web Flask en segundo plano...")
+    
+    def run_flask():
+        port = int(os.environ.get('PORT', 10000))
+        print(f"🌐 Flask ejecutándose en puerto {port}")
+        app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
+    
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+    
+    # 4. Iniciar el bot en el HILO PRINCIPAL
     print("\n" + "="*60)
-    print("🤖 BOT DE PLANES DE PAGO - SISTEMA INICIADO")
+    print("🤖 BOT DE PLANES DE PAGO - SISTEMA COMPLETO CON PUNTOS")
     print("="*60)
-    print(f"📍 URL del servicio: https://bot-sususemanal.onrender.com")
-    print(f"📍 Estado: ESCUCHANDO MENSAJES...")
+    print("📍 COMANDOS PARA USUARIOS:")
+    print("   /start - Registrarse en el sistema")
+    print("   /catalogo - Ver productos (solo lectura)")
+    print("   /misplanes - Ver plan asignado")
+    print("   /miperfil - Información personal")
+    print("   /mispuntos - Sistema de puntos")
+    print("   /referidos - Invitar amigos")
+    print("   /pagarealizado - Registrar pago")
+    print("   /mistatus - Estado de mis pagos")
+    print("\n📍 COMANDOS PARA ADMIN (5908252094, 7228946245, 1074083869):")  # ← ACTUALIZADO
+    print("   /verasignaciones - Ver todas las asignaciones")
+    print("   /asignar_X - Asignar productos a usuario")
+    print("   /adminverproductos - Ver catálogo completo")
+    print("   /adminagregarproducto - Agregar producto")
+    print("   /verpagos - Ver pagos pendientes")
+    print("   /verpagostodos - Ver TODOS los pagos")
+    print("   /verusuarios - Ver todos los usuarios")
+    print("   /estadocontador - Estado del sistema")
+    print("   /pausarcontador - Pausar contador global")
+    print("   /reanudarcontador - Reanudar contador global")
+    print("   /configurarsemanas - Configurar semanas")
+    print("   /incrementarsemana - Incremento manual")
+    print("   /forzarincremento - Forzar incremento")
+    print("   /rankingpuntos - Ranking de puntos")
+    print("   /verreferidos - Referidos pendientes")
+    print("   /verpuntosusuario_ID - Puntos de usuario")
+    print("   /vaciarranking - Vaciar sistema de puntos")
     print("="*60 + "\n")
     
+    print("🟢 BOT INICIADO - Escuchando mensajes...")
+    print("📍 Los usuarios pueden escribir /start al bot")
+    print("📍 Servicio web activo en: https://bot-sususemanal.onrender.com")
+    
     try:
-        # Iniciar polling con manejo de errores mejorado
-        print("🟢 INICIANDO POLLING...")
-        application.run_polling(
-            drop_pending_updates=True,
-            allowed_updates=Update.ALL_TYPES,
-            timeout=30,
-            poll_interval=1
-        )
+        application.run_polling()
     except KeyboardInterrupt:
         print("⏹️ Bot detenido por el usuario")
     except Exception as e:
-        print(f"❌ ERROR CRÍTICO en run_polling: {e}")
-        import traceback
-        traceback.print_exc()
-        # Intentar reiniciar después de 30 segundos
-        print("🔄 Reiniciando en 30 segundos...")
-        time.sleep(30)
-        run_bot()
-
-def run_flask():
-    """Ejecuta Flask en un puerto específico para Render - VERSIÓN MEJORADA"""
-    try:
-        port = int(os.environ.get('PORT', 10000))
-        print(f"🌐 INICIANDO FLASK en puerto {port}")
-        
-        # Desactivar logging verbose de Flask
-        import logging
-        log = logging.getLogger('werkzeug')
-        log.setLevel(logging.ERROR)
-        
-        app.run(
-            host='0.0.0.0', 
-            port=port, 
-            debug=False, 
-            use_reloader=False,
-            threaded=True
-        )
-    except Exception as e:
-        print(f"❌ ERROR en Flask: {e}")
+        print(f"❌ Error en el bot: {e}")
         import traceback
         traceback.print_exc()
 
 if __name__ == "__main__":
-    print("🚀 INICIANDO SISTEMA COMPLETO")
+    print("🚀 INICIANDO SISTEMA COMPLETO...")
     
-    # En Render, iniciar Flask en segundo plano
-    if 'RENDER' in os.environ:
-        print("🌐 Detectado entorno Render - Iniciando Flask en background...")
-        flask_thread = threading.Thread(target=run_flask, daemon=True)
-        flask_thread.start()
+    # SOLUCIÓN: Ejecutar el bot en el hilo principal y Flask en segundo plano
+    def run_flask():
+        """Ejecutar Flask en puerto diferente"""
+        try:
+            port = int(os.environ.get('PORT', 10000))
+            print(f"🌐 Flask ejecutándose en puerto {port}")
+            app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
+        except Exception as e:
+            print(f"❌ Error en Flask: {e}")
     
-    # Ejecutar el bot inmediatamente
-    print("🤖 Iniciando bot principal...")
-    run_bot()
+    # Iniciar Flask en segundo plano
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+    
+    # Esperar un momento para que Flask se inicie
+    import time
+    time.sleep(2)
+    
+    # Ejecutar el bot en el HILO PRINCIPAL (esto es crucial)
+    print("🤖 Iniciando bot en hilo principal...")
+    main()
+
