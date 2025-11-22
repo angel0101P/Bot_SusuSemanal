@@ -5,7 +5,8 @@ import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler
 import psycopg
-from datetime import datetime, timedelta
+import pytz
+from datetime import datetime, timedelta, timezone
 import json
 import telegram
 from dotenv import load_dotenv
@@ -2989,7 +2990,7 @@ async def estado_contador(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 
                 # Convertir a zona horaria local (opcional)
                 import pytz
-                local_tz = pytz.timezone('America/Mexico_City')  # Cambia por tu zona
+                local_tz = pytz.timezone('America/Caracas')  # Cambia por tu zona
                 next_run_local = next_run.astimezone(local_tz)
                 proximo_avance = next_run_local.strftime('%d/%m/%Y %H:%M')
     
@@ -4439,6 +4440,7 @@ if __name__ == "__main__":
     # Ejecutar el bot en el HILO PRINCIPAL (esto es crucial)
     print("🤖 Iniciando bot en hilo principal...")
     main()
+
 
 
 
