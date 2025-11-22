@@ -2946,7 +2946,7 @@ async def eliminar_producto(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def estado_contador(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Ver estado del contador con información completa"""
-    if not is_admin(update.effective_user.id):  # ← ACTUALIZADO
+    if not is_admin(update.effective_user.id):
         await update.message.reply_text("❌ No tienes permisos de administrador")
         return
 
@@ -2971,9 +2971,33 @@ async def estado_contador(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     conn.close()
     
-    # Calcular próximo incremento automático
-    ahora = datetime.now()
-    proximo_incremento = ahora + timedelta(days=7)
+    # ✅ CORRECCIÓN: Obtener fecha real del próximo job
+    proximo_avance = "No programado"
+    job_queue = context.application.job_queue
+    
+    if job_queue:
+        jobs = job_queue.get_jobs_by_name('incremento_automatico')
+        if jobs:
+            # Obtener el próximo job
+            job = jobs[0]
+            next_run = job.next_t
+            if next_run:
+                # Convertir a zona horaria local si es necesario
+                from datetime import timezone
+                if next_run.tzinfo is None:
+                    next_run = next_run.replace(tzinfo=timezone.utc)
+                
+                # Convertir a zona horaria local (opcional)
+                import pytz
+                local_tz = pytz.timezone('America/Mexico_City')  # Cambia por tu zona
+                next_run_local = next_run.astimezone(local_tz)
+                proximo_avance = next_run_local.strftime('%d/%m/%Y %H:%M')
+    
+    # Si no hay job programado, calcular uno estimado
+    if proximo_avance == "No programado":
+        ahora = datetime.now()
+        proximo_avance_estimado = ahora + timedelta(days=7)
+        proximo_avance = f"{proximo_avance_estimado.strftime('%d/%m/%Y %H:%M')} (estimado)"
     
     await update.message.reply_text(
         f"⚙️ **ESTADO DEL SISTEMA - DETALLADO**\n\n"
@@ -2984,14 +3008,15 @@ async def estado_contador(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"• ⏸️ Planes pausados: {planes_pausados}\n"
         f"• ✅ Planes completados: {planes_completados}\n\n"
         f"🔄 **INCREMENTO AUTOMÁTICO:**\n"
-        f"• ⏰ Próximo: {proximo_incremento.strftime('%d/%m/%Y %H:%M')}\n"
+        f"• ⏰ Próximo: {proximo_avance}\n"
         f"• 📅 Frecuencia: 7 días\n\n"
         f"**Controles:**\n"
         f"⏸️ /pausarcontador - Pausar contador\n"
         f"▶️ /reanudarcontador - Reanudar contador\n"
         f"🔢 /configurarsemanas - Cambiar semanas\n"
         f"📈 /incrementarsemana - Incremento manual\n"
-        f"🔄 /forzarincremento - Forzar incremento (ignora pausa)"
+        f"🔄 /forzarincremento - Forzar incremento (ignora pausa)\n"
+        f"🚀 /adelantarcompleto - Adelanto completo con reprogramación"
     )
 
 async def pausar_contador(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -4414,5 +4439,6 @@ if __name__ == "__main__":
     # Ejecutar el bot en el HILO PRINCIPAL (esto es crucial)
     print("🤖 Iniciando bot en hilo principal...")
     main()
+
 
 
