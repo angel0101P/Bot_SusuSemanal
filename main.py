@@ -3389,10 +3389,15 @@ async def configurar_semanas(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def verpagostodos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Muestra TODOS los pagos con opciones simplificadas (solo admin)"""
-    if not is_admin(update.effective_user.id):  # ← ACTUALIZADO
+    print(f"🟢 DEBUG: /verpagostodos ejecutado por {update.effective_user.id}")
+    
+    if not is_admin(update.effective_user.id):
+        print(f"🔴 DEBUG: Usuario {update.effective_user.id} NO es admin")
         await update.message.reply_text("❌ No tienes permisos de administrador")
         return
-        
+    
+    print(f"🟢 DEBUG: Usuario {update.effective_user.id} es admin, ejecutando función...")
+    
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("""
@@ -3404,6 +3409,7 @@ async def verpagostodos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """)
     pagos = cursor.fetchall()
     conn.close()
+    
     
     if not pagos:
         await update.message.reply_text("📭 No hay pagos registrados en el sistema")
