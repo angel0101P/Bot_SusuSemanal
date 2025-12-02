@@ -4531,11 +4531,7 @@ def main():
     # 🆕 Handler para botones de asignación de puntos
     application.add_handler(CallbackQueryHandler(handle_asignacion_puntos, pattern=r'^puntos_.*'))
 
-    # 🆕 Handler para puntos personalizados (DEBE IR ANTES del handler general de texto)
-    application.add_handler(MessageHandler(
-        filters.TEXT & ~filters.COMMAND,
-        handle_puntos_personalizados
-    ))
+
             
     # 7. NUEVOS HANDLERS PARA INCREMENTO DE SEMANAS
     application.add_handler(CommandHandler("incrementarsemana", incrementar_semana_manual))
@@ -4553,6 +4549,12 @@ def main():
     application.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND,
         handle_message
+    ))
+
+    # 🆕 Handler para puntos personalizados (DEBE IR ANTES del handler general de texto)
+    application.add_handler(MessageHandler(
+        filters.TEXT & ~filters.COMMAND,
+        handle_puntos_personalizados
     ))
     
     # 10. Handlers de archivos
