@@ -4516,8 +4516,8 @@ def main():
     # 5. Handlers de administrador
     application.add_handler(CommandHandler("adminverproductos", admin_ver_productos))
     application.add_handler(CommandHandler("adminagregarproducto", admin_agregar_producto))
-    application.add_handler(CommandHandler("verpagos", verpagos))
     application.add_handler(CommandHandler("verpagostodos", verpagostodos))
+    application.add_handler(CommandHandler("verpagos", verpagos))
     application.add_handler(CommandHandler("verusuarios", verusuarios))
     application.add_handler(CommandHandler("estadocontador", estado_contador))
     application.add_handler(CommandHandler("pausarcontador", pausar_contador))
@@ -4681,6 +4681,7 @@ if __name__ == "__main__":
     # Ejecutar el bot en el HILO PRINCIPAL (esto es crucial)
     print("🤖 Iniciando bot en hilo principal...")
     main()
+
 
 
 
