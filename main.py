@@ -4476,9 +4476,14 @@ async def adelantar_semana_completo(update: Update, context: ContextTypes.DEFAUL
         await update.message.reply_text("❌ Error al adelantar semanas")
 
 
+
 def main():
     """Función principal - BOT EN HILO PRINCIPAL"""
     print("🎯 INICIANDO BOT DE TELEGRAM EN RENDER...")
+    
+    # 🚨 DIAGNÓSTICO - Verificar que la función existe
+    print(f"🔍 Función verpagostodos existe: {'verpagostodos' in globals()}")
+    print(f"🔍 Tipo: {type(verpagostodos) if 'verpagostodos' in globals() else 'NO EXISTE'}")
     
     # 1. Inicializar base de datos
     print("🗄️ Inicializando base de datos...")
@@ -4497,6 +4502,11 @@ def main():
         .pool_timeout(30)
         .build()
     )
+    
+    # 🚨 DIAGNÓSTICO - Agregar handler de prueba
+    print("🟡 Agregando handler para /verpagostodos...")
+    application.add_handler(CommandHandler("verpagostodos", verpagostodos))
+    print("🟡 Handler agregado")
     
     # =============================================
     # 🎯 TODOS LOS HANDLERS COMPLETOS
@@ -4686,6 +4696,7 @@ if __name__ == "__main__":
     # Ejecutar el bot en el HILO PRINCIPAL (esto es crucial)
     print("🤖 Iniciando bot en hilo principal...")
     main()
+
 
 
 
