@@ -4499,7 +4499,7 @@ def main():
     )
     
     # =============================================
-    # 🎯 TODOS LOS HANDLERS COMPLETOS - CORREGIDO
+    # 🎯 TODOS LOS HANDLERS COMPLETOS
     # =============================================
     
     # 1. Handlers de comandos básicos para usuarios
@@ -4526,7 +4526,7 @@ def main():
     # 5. Handlers de administrador
     application.add_handler(CommandHandler("adminverproductos", admin_ver_productos))
     application.add_handler(CommandHandler("adminagregarproducto", admin_agregar_producto))
-    application.add_handler(CommandHandler("verpagostodos", verpagostodos))  # ← ¡ESTÁ AQUÍ!
+    application.add_handler(CommandHandler("verpagostodos", verpagostodos))
     application.add_handler(CommandHandler("verpagos", verpagos))
     application.add_handler(CommandHandler("verusuarios", verusuarios))
     application.add_handler(CommandHandler("estadocontador", estado_contador))
@@ -4547,7 +4547,6 @@ def main():
     # 🆕 Handler para botones de asignación de puntos
     application.add_handler(CallbackQueryHandler(handle_asignacion_puntos, pattern=r'^puntos_.*'))
 
-
             
     # 7. NUEVOS HANDLERS PARA INCREMENTO DE SEMANAS
     application.add_handler(CommandHandler("incrementarsemana", incrementar_semana_manual))
@@ -4562,12 +4561,6 @@ def main():
     # 🆕 NUEVO: Handler para asignación por nombre
     application.add_handler(CommandHandler("asignar", buscar_usuario_asignar))
     
-    # 🆕 Handler para puntos personalizados (DEBE IR AQUÍ, NO ABAJO)
-    application.add_handler(MessageHandler(
-        filters.TEXT & ~filters.COMMAND,
-        handle_puntos_personalizados_con_retorno  # ← ¡NUEVA FUNCIÓN!
-    ))
-    
     # 9. Handler para mensajes normales
     application.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND,
@@ -4579,6 +4572,12 @@ def main():
     application.add_handler(MessageHandler(filters.PHOTO, handle_image))
     application.add_handler(MessageHandler(filters.Document.IMAGE, handle_image))
     application.add_handler(MessageHandler(filters.Document.ALL, handle_all_documents))
+
+    # 🆕 Handler para puntos personalizados (DEBE IR DESPUÉS de handle_message)
+    application.add_handler(MessageHandler(
+        filters.TEXT & ~filters.COMMAND,
+        handle_puntos_personalizados
+    ))
     
     # 11. Handler de botones de asignación
     application.add_handler(CallbackQueryHandler(button_handler_asignacion, pattern=r'^asignar_.*'))
@@ -4611,7 +4610,6 @@ def main():
     
     print("✅ BOT CONFIGURADO CORRECTAMENTE")
     print(f"🔄 INCREMENTO AUTOMÁTICO: {job_queue_status}")
-    
     
     # 3. Iniciar Flask en un hilo separado (para Render)
     print("🌐 Iniciando servidor web Flask en segundo plano...")
@@ -4694,6 +4692,7 @@ if __name__ == "__main__":
     # Ejecutar el bot en el HILO PRINCIPAL (esto es crucial)
     print("🤖 Iniciando bot en hilo principal...")
     main()
+
 
 
 
