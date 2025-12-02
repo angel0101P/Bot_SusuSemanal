@@ -1893,9 +1893,19 @@ async def handle_puntos_personalizados(update: Update, context: ContextTypes.DEF
     """Maneja la entrada de puntos personalizados por el admin"""
     user_id = update.effective_user.id
     
+    # SOLO procesar si es admin Y tiene solicitud pendiente
     if not is_admin(user_id):
-        await update.message.reply_text("❌ No tienes permisos de administrador")
-        return
+        return  # No es admin, ignorar
+    
+    # Verificar si hay solicitud pendiente
+    tiene_solicitud = False
+    for key in context.user_data.keys():
+        if key.startswith('esperando_puntos_personalizado_'):
+            tiene_solicitud = True
+            break
+    
+    if not tiene_solicitud:
+        return  # No hay solicitud, pasar al siguiente handler
     
     # Buscar si hay alguna solicitud pendiente de puntos personalizados
     pago_id = None
@@ -4682,6 +4692,7 @@ if __name__ == "__main__":
     # Ejecutar el bot en el HILO PRINCIPAL (esto es crucial)
     print("🤖 Iniciando bot en hilo principal...")
     main()
+
 
 
 
