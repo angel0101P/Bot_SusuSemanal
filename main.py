@@ -4499,7 +4499,7 @@ def main():
     )
     
     # =============================================
-    # 🎯 TODOS LOS HANDLERS COMPLETOS
+    # 🎯 TODOS LOS HANDLERS COMPLETOS - SIN HANDLER PROBLEMÁTICO
     # =============================================
     
     # 1. Handlers de comandos básicos para usuarios
@@ -4572,12 +4572,6 @@ def main():
     application.add_handler(MessageHandler(filters.PHOTO, handle_image))
     application.add_handler(MessageHandler(filters.Document.IMAGE, handle_image))
     application.add_handler(MessageHandler(filters.Document.ALL, handle_all_documents))
-
-    # 🆕 Handler para puntos personalizados (DEBE IR DESPUÉS de handle_message)
-    application.add_handler(MessageHandler(
-        filters.TEXT & ~filters.COMMAND,
-        handle_puntos_personalizados
-    ))
     
     # 11. Handler de botones de asignación
     application.add_handler(CallbackQueryHandler(button_handler_asignacion, pattern=r'^asignar_.*'))
@@ -4692,6 +4686,7 @@ if __name__ == "__main__":
     # Ejecutar el bot en el HILO PRINCIPAL (esto es crucial)
     print("🤖 Iniciando bot en hilo principal...")
     main()
+
 
 
 
