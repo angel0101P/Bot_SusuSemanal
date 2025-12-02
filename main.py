@@ -4499,82 +4499,88 @@ def main():
     )
     
     # =============================================
-    # 🎯 REORGANIZACIÓN COMPLETA DE HANDLERS
+    # 🎯 TODOS LOS HANDLERS COMPLETOS
     # =============================================
     
-    # 🎯 PRIMERO: Handlers de comandos básicos para todos los usuarios
+    # 1. Handlers de comandos básicos para usuarios
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("cancelar", cancelar))
     application.add_handler(CommandHandler("miperfil", miperfil))
     application.add_handler(CommandHandler("pagarealizado", pagarealizado))
     application.add_handler(CommandHandler("mistatus", mistatus))
     
-    # 🎯 SEGUNDO: Handlers para sistema de puntos y referidos
+    # 🆕 2. Handlers para sistema de puntos y referidos
     application.add_handler(CommandHandler("mispuntos", mispuntos))
     application.add_handler(CommandHandler("referidos", referidos))
     
-    # 🎯 TERCERO: Handlers para productos y planes
-    application.add_handler(CommandHandler("catalogo", catalogo_solo_lectura))
-    application.add_handler(CommandHandler("misplanes", mis_planes_mejorado))
+    # 3. Handlers para sistema de asignación administrativa
     application.add_handler(CommandHandler("verasignaciones", ver_asignaciones))
     
-    # 🎯 CUARTO: Handlers para administrador - COMANDOS SIMPLES
+    # 4. Handlers modificados para productos (sin carrito)
+    application.add_handler(CommandHandler("catalogo", catalogo_solo_lectura))
+    application.add_handler(CommandHandler("misplanes", mis_planes_mejorado))
+
+    # 🆕 NUEVO COMANDO PARA ADELANTO COMPLETO
+    application.add_handler(CommandHandler("adelantarcompleto", adelantar_semana_completo))
+    
+    # 5. Handlers de administrador
     application.add_handler(CommandHandler("adminverproductos", admin_ver_productos))
     application.add_handler(CommandHandler("adminagregarproducto", admin_agregar_producto))
     application.add_handler(CommandHandler("verpagos", verpagos))
+    application.add_handler(CommandHandler("verpagostodos", verpagostodos))
     application.add_handler(CommandHandler("verusuarios", verusuarios))
     application.add_handler(CommandHandler("estadocontador", estado_contador))
     application.add_handler(CommandHandler("pausarcontador", pausar_contador))
     application.add_handler(CommandHandler("reanudarcontador", reanudar_contador))
     application.add_handler(CommandHandler("configurarsemanas", configurar_semanas))
-    application.add_handler(CommandHandler("incrementarsemana", incrementar_semana_manual))
-    application.add_handler(CommandHandler("forzarincremento", forzar_incremento))
-    application.add_handler(CommandHandler("adelantarcompleto", adelantar_semana_completo))
     
-    # 🎯 QUINTO: Handlers para sistema de puntos (admin)
+    # 🆕 6. Handlers para sistema de puntos (admin)
     application.add_handler(CommandHandler("rankingpuntos", ranking_puntos))
     application.add_handler(CommandHandler("verreferidos", ver_referidos_pendientes))
     application.add_handler(CommandHandler("vaciarranking", vaciar_ranking_puntos))
     
-    # 🎯 SEXTO: Handlers para edición de puntos (admin)
+    # 🆕 Handlers para edición de puntos (admin)
     application.add_handler(CommandHandler("agregarpuntos", agregar_puntos_admin))
     application.add_handler(CommandHandler("quitarpuntos", quitar_puntos_admin))
     application.add_handler(CommandHandler("establecerpuntos", establecer_puntos_admin))
+
+    # 🆕 Handler para botones de asignación de puntos
+    application.add_handler(CallbackQueryHandler(handle_asignacion_puntos, pattern=r'^puntos_.*'))
+
+
+            
+    # 7. NUEVOS HANDLERS PARA INCREMENTO DE SEMANAS
+    application.add_handler(CommandHandler("incrementarsemana", incrementar_semana_manual))
+    application.add_handler(CommandHandler("forzarincremento", forzar_incremento))
     
-    # 🎯 SÉPTIMO: Handler ESPECÍFICO para verpagostodos - DEBE IR ANTES DE COMANDOS DINÁMICOS
-    application.add_handler(CommandHandler("verpagostodos", verpagostodos))
-    
-    # 🎯 OCTAVO: Handler para asignación por nombre (usa callback, no dinámico)
-    application.add_handler(CommandHandler("asignar", buscar_usuario_asignar))
-    
-    # 🎯 NOVENO: Handler para comandos dinámicos (EXCLUYENDO verpagostodos que ya está arriba)
+    # 8. Handler para comandos dinámicos de asignación (EXCLUYENDO /asignar)
     application.add_handler(MessageHandler(
-        filters.Regex(r'^\/(verimagen|confirmar|rechazar|borrar|borrarusuario|editarproducto|eliminarproducto|verpago|borrarpago|verificarreferido|rechazarreferido|verpuntosusuario|asignar)_\d+'),
+        filters.Regex(r'^\/(verimagen|confirmar|rechazar|borrar|borrarusuario|editarproducto|eliminarproducto|verpago|borrarpago|verificarreferido|rechazarreferido|verpuntosusuario)_\d+'),
         handle_dynamic_commands
     ))
-    
-    # 🎯 DÉCIMO: Handler de botones de asignación
-    application.add_handler(CallbackQueryHandler(button_handler_asignacion, pattern=r'^asignar_.*'))
-    
-    # 🎯 DÉCIMO PRIMERO: Handler de botones para sistema de puntos
-    application.add_handler(CallbackQueryHandler(button_handler_puntos, pattern=r'^(compartir_codigo|ver_mis_puntos|ir_a_referidos|actualizar_puntos)$'))
-    
-    # 🎯 DÉCIMO SEGUNDO: Handler para asignación de puntos después de pago
-    application.add_handler(CallbackQueryHandler(handle_asignacion_puntos, pattern=r'^puntos_.*'))
-    
-    # 🎯 DÉCIMO TERCERO: Handler de botones generales (debe ir ÚLTIMO)
-    application.add_handler(CallbackQueryHandler(button_handler))
-    
-    # 🎯 DÉCIMO CUARTO: Handler para mensajes normales (DEBE IR DESPUÉS de comandos)
+
+    # 🆕 NUEVO: Handler para asignación por nombre
+    application.add_handler(CommandHandler("asignar", buscar_usuario_asignar))
+    # 9. Handler para mensajes normales
     application.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND,
         handle_message
     ))
+
     
-    # 🎯 DÉCIMO QUINTO: Handlers de archivos
+    # 10. Handlers de archivos
     application.add_handler(MessageHandler(filters.PHOTO, handle_image))
     application.add_handler(MessageHandler(filters.Document.IMAGE, handle_image))
     application.add_handler(MessageHandler(filters.Document.ALL, handle_all_documents))
+    
+    # 11. Handler de botones de asignación
+    application.add_handler(CallbackQueryHandler(button_handler_asignacion, pattern=r'^asignar_.*'))
+    
+    # 🆕 12. Handler de botones para sistema de puntos
+    application.add_handler(CallbackQueryHandler(button_handler_puntos, pattern=r'^(compartir_codigo|ver_mis_puntos|ir_a_referidos|actualizar_puntos)$'))
+    
+    # 13. Handler de botones generales (para otros botones)
+    application.add_handler(CallbackQueryHandler(button_handler))
     
     # ✅ AGREGAR JOB PARA INCREMENTO AUTOMÁTICO
     try:
@@ -4599,6 +4605,18 @@ def main():
     print("✅ BOT CONFIGURADO CORRECTAMENTE")
     print(f"🔄 INCREMENTO AUTOMÁTICO: {job_queue_status}")
     
+    # 3. Iniciar Flask en un hilo separado (para Render)
+    print("🌐 Iniciando servidor web Flask en segundo plano...")
+    
+    def run_flask():
+        port = int(os.environ.get('PORT', 10000))
+        print(f"🌐 Flask ejecutándose en puerto {port}")
+        app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
+    
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+    
+    # 4. Iniciar el bot en el HILO PRINCIPAL
     print("\n" + "="*60)
     print("🤖 BOT DE PLANES DE PAGO - SISTEMA COMPLETO CON PUNTOS")
     print("="*60)
@@ -4611,13 +4629,13 @@ def main():
     print("   /referidos - Invitar amigos")
     print("   /pagarealizado - Registrar pago")
     print("   /mistatus - Estado de mis pagos")
-    print("\n📍 COMANDOS PARA ADMIN:")
-    print("   /verpagostodos - Ver TODOS los pagos")
+    print("\n📍 COMANDOS PARA ADMIN (5908252094, 7228946245, 1074083869):")  # ← ACTUALIZADO
     print("   /verasignaciones - Ver todas las asignaciones")
-    print("   /asignar - Buscar usuario para asignar productos")
+    print("   /asignar_X - Asignar productos a usuario")
     print("   /adminverproductos - Ver catálogo completo")
     print("   /adminagregarproducto - Agregar producto")
     print("   /verpagos - Ver pagos pendientes")
+    print("   /verpagostodos - Ver TODOS los pagos")
     print("   /verusuarios - Ver todos los usuarios")
     print("   /estadocontador - Estado del sistema")
     print("   /pausarcontador - Pausar contador global")
@@ -4627,6 +4645,7 @@ def main():
     print("   /forzarincremento - Forzar incremento")
     print("   /rankingpuntos - Ranking de puntos")
     print("   /verreferidos - Referidos pendientes")
+    print("   /verpuntosusuario_ID - Puntos de usuario")
     print("   /vaciarranking - Vaciar sistema de puntos")
     print("="*60 + "\n")
     
@@ -4635,7 +4654,7 @@ def main():
     print("📍 Servicio web activo en: https://bot-sususemanal.onrender.com")
     
     try:
-        application.run_polling(allowed_updates=Update.ALL_TYPES)
+        application.run_polling()
     except KeyboardInterrupt:
         print("⏹️ Bot detenido por el usuario")
     except Exception as e:
@@ -4667,6 +4686,7 @@ if __name__ == "__main__":
     # Ejecutar el bot en el HILO PRINCIPAL (esto es crucial)
     print("🤖 Iniciando bot en hilo principal...")
     main()
+
 
 
 
