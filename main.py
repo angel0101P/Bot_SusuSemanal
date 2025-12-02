@@ -4537,7 +4537,12 @@ def main():
     application.add_handler(CommandHandler("adminverproductos", admin_ver_productos))
     application.add_handler(CommandHandler("adminagregarproducto", admin_agregar_producto))
     application.add_handler(CommandHandler("verpagos", verpagos))
-    application.add_handler(CommandHandler("verpagostodos", verpagostodos))
+    # 🚨 AQUÍ VA EL FIX - PEGA ESTO JUSTO DESPUÉS:
+    async def arreglar_verpagostodos(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await update.message.reply_text("✅ FUNCIONA: Comando /verpagostodos arreglado")
+
+    application.add_handler(CommandHandler("verpagostodos", arreglar_verpagostodos))
+    print("✅ FIX APLICADO")
     application.add_handler(CommandHandler("verusuarios", verusuarios))
     application.add_handler(CommandHandler("estadocontador", estado_contador))
     application.add_handler(CommandHandler("pausarcontador", pausar_contador))
@@ -4696,7 +4701,6 @@ if __name__ == "__main__":
     # Ejecutar el bot en el HILO PRINCIPAL (esto es crucial)
     print("🤖 Iniciando bot en hilo principal...")
     main()
-
 
 
 
