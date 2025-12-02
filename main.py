@@ -1661,7 +1661,7 @@ async def miperfil(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(mensaje)
 
 async def confirmar_pago(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Confirma un pago pendiente (admin) - ACTUALIZADO CON SISTEMA DE PUNTOS"""
+    """Confirma un pago pendiente y luego permite asignar puntos manualmente"""
     if not is_admin(update.effective_user.id):
         await update.message.reply_text("❌ No tienes permisos de administrador")
         return
@@ -1674,7 +1674,7 @@ async def confirmar_pago(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cursor = conn.cursor()
         
         # Obtener información del pago
-        cursor.execute("SELECT user_id, monto, fecha FROM pagos WHERE id = %s", (pago_id,))
+        cursor.execute("SELECT user_id, monto, fecha, referencia FROM pagos WHERE id = %s", (pago_id,))
         pago_info = cursor.fetchone()
         
         if not pago_info:
@@ -1682,90 +1682,87 @@ async def confirmar_pago(update: Update, context: ContextTypes.DEFAULT_TYPE):
             conn.close()
             return
         
-        user_id, monto, fecha_pago = pago_info
+        user_id, monto, fecha_pago, referencia = pago_info
         
-        # Actualizar estado del pago
+        # Actualizar estado del pago a "aprobado" INMEDIATAMENTE
         cursor.execute("UPDATE pagos SET estado = 'aprobado' WHERE id = %s", (pago_id,))
-        
-        # 🆕 CALCULAR PUNTOS POR PAGO - VERSIÓN CORREGIDA
-        puntos_otorgados = 0
-        descripcion_puntos = ""
-        
-        # Convertir fecha_pago a datetime si es necesario
-        if isinstance(fecha_pago, str):
-            fecha_pago = datetime.fromisoformat(fecha_pago.replace('Z', '+00:00'))
-        
-        fecha_actual = datetime.now()
-        
-        # Calcular días hasta el próximo lunes
-        dias_hasta_lunes = (0 - fecha_actual.weekday()) % 7  # 0 = lunes
-        if dias_hasta_lunes == 0 and fecha_actual.hour < 12:
-            # Si es lunes antes del mediodía, considerar como misma semana
-            dias_hasta_lunes = 0
-        elif dias_hasta_lunes == 0:
-            # Si es lunes después del mediodía, próximo lunes en 7 días
-            dias_hasta_lunes = 7
-        
-        proximo_incremento = fecha_actual + timedelta(days=dias_hasta_lunes)
-        
-        # Calcular anticipación (días entre pago y próximo incremento)
-        # Usar solo la parte de fecha, ignorando la hora
-        fecha_pago_date = fecha_pago.date()
-        proximo_incremento_date = proximo_incremento.date()
-        fecha_actual_date = fecha_actual.date()
-        
-        dias_anticipacion = (proximo_incremento_date - fecha_pago_date).days
-        
-        print(f"🔍 DEBUG Puntos: Pago={fecha_pago_date}, Hoy={fecha_actual_date}, ProxIncremento={proximo_incremento_date}, Anticipación={dias_anticipacion}d")
-        
-        if dias_anticipacion >= 3:
-            puntos_otorgados = 5
-            descripcion_puntos = f"Pago adelantado (+{dias_anticipacion}d) - ${monto:.2f}"
-        else:
-            puntos_otorgados = 2
-            descripcion_puntos = f"Pago puntual - ${monto:.2f}"
-        
-        # Otorgar puntos
-        if puntos_otorgados > 0:
-            success = await agregar_puntos(user_id, puntos_otorgados, "pago", descripcion_puntos)
-            if success:
-                print(f"✅ {puntos_otorgados} puntos otorgados a usuario {user_id} por pago {pago_id}")
-        
         conn.commit()
+        
+        # Obtener información del usuario para mostrar
+        cursor.execute("SELECT first_name, last_name FROM usuarios WHERE user_id = %s", (user_id,))
+        usuario_info = cursor.fetchone()
+        
+        if usuario_info:
+            first_name, last_name = usuario_info
+            nombre_usuario = f"{first_name or ''} {last_name or ''}".strip()
+        else:
+            nombre_usuario = f"Usuario {user_id}"
+        
         conn.close()
         
-        # Notificar al usuario
+        # Guardar información del pago en context para usarla después
+        context.user_data[f'pago_aprobado_{pago_id}'] = {
+            'pago_id': pago_id,
+            'user_id': user_id,
+            'nombre_usuario': nombre_usuario,
+            'monto': monto,
+            'fecha_pago': fecha_pago,
+            'referencia': referencia,
+            'admin_id': update.effective_user.id
+        }
+        
+        # Formatear fecha para mostrar
+        if isinstance(fecha_pago, str):
+            fecha_mostrar = fecha_pago[:10]  # Tomar solo la parte de fecha
+        else:
+            fecha_mostrar = fecha_pago.strftime('%d/%m/%Y')
+        
+        # Mostrar mensaje de confirmación con botones para asignar puntos
+        mensaje = (
+            f"✅ **PAGO APROBADO**\n\n"
+            f"📄 **ID Pago:** {pago_id}\n"
+            f"👤 **Usuario:** {nombre_usuario}\n"
+            f"🆔 **ID Usuario:** {user_id}\n"
+            f"💰 **Monto:** ${float(monto):.2f}\n"
+            f"🔢 **Referencia:** {referencia}\n"
+            f"📅 **Fecha:** {fecha_mostrar}\n\n"
+            f"⭐ **ASIGNAR PUNTOS**\n"
+            f"¿Cuántos puntos deseas otorgar por este pago?\n\n"
+            f"💡 **Sugerencias:**\n"
+            f"• 0 pts - Solo aprobar pago\n"
+            f"• 2 pts - Pago normal\n"
+            f"• 5 pts - Pago adelantado/excepcional"
+        )
+        
+        # Crear teclado con botones
+        keyboard = [
+            [InlineKeyboardButton("0 Puntos", callback_data=f"puntos_0_{pago_id}"),
+             InlineKeyboardButton("2 Puntos", callback_data=f"puntos_2_{pago_id}"),
+             InlineKeyboardButton("5 Puntos", callback_data=f"puntos_5_{pago_id}")],
+            [InlineKeyboardButton("✏️ Personalizado", callback_data=f"puntos_personalizado_{pago_id}")],
+            [InlineKeyboardButton("❌ Saltar asignación", callback_data=f"puntos_saltar_{pago_id}")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(mensaje, reply_markup=reply_markup)
+        
+        # Notificar al usuario que su pago fue aprobado (sin puntos todavía)
         try:
             mensaje_usuario = (
                 f"✅ **¡Tu pago ha sido aprobado!**\n\n"
-                f"💰 **Monto:** ${monto:.2f}\n"
-                f"📅 **Fecha pago:** {fecha_pago.strftime('%d/%m/%Y')}\n"
-            )
-            
-            if puntos_otorgados > 0:
-                tipo_pago = "adelantado 🚀" if puntos_otorgados == 5 else "puntual ⏰"
-                mensaje_usuario += f"⭐ **+{puntos_otorgados} puntos** ({tipo_pago})\n\n"
-            
-            mensaje_usuario += (
-                f"Puedes ver el estado actualizado con /mistatus\n"
-                f"Ver tus puntos con /mispuntos"
+                f"📄 **ID Pago:** {pago_id}\n"
+                f"💰 **Monto:** ${float(monto):.2f}\n"
+                f"🔢 **Referencia:** {referencia}\n"
+                f"📅 **Fecha:** {fecha_mostrar}\n\n"
+                f"📋 **Estado:** Aprobado\n"
+                f"⭐ **Puntos:** Pendientes de asignación\n\n"
+                f"El administrador asignará los puntos correspondientes."
             )
             
             await context.bot.send_message(chat_id=user_id, text=mensaje_usuario)
             
-            # 🆕 Verificar si alcanzó algún beneficio
-            await verificar_beneficios_puntos(user_id)
-            
         except Exception as e:
             print(f"❌ No se pudo notificar al usuario: {e}")
-        
-        tipo_pago_admin = "adelantado" if puntos_otorgados == 5 else "puntual"
-        await update.message.reply_text(
-            f"✅ Pago aprobado\n"
-            f"💰 ${monto:.2f}\n"
-            f"⭐ +{puntos_otorgados} pts ({tipo_pago_admin})\n"
-            f"📅 Anticipación: {dias_anticipacion} días"
-        )
         
     except Exception as e:
         print(f"❌ Error en confirmar_pago: {e}")
@@ -1774,6 +1771,233 @@ async def confirmar_pago(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =============================================
 # 🆕 MANEJO DE BOTONES PARA SISTEMA DE PUNTOS
 # =============================================
+
+async def handle_asignacion_puntos(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Maneja la asignación de puntos después de aprobar un pago"""
+    query = update.callback_query
+    await query.answer()
+    
+    if not is_admin(query.from_user.id):
+        await query.answer("❌ No tienes permisos", show_alert=True)
+        return
+    
+    data = query.data
+    print(f"🟡 BOTÓN PUNTOS: {data}")
+    
+    # Extraer información del callback_data
+    # Formato: puntos_0_123, puntos_2_123, puntos_personalizado_123, puntos_saltar_123
+    partes = data.split('_')
+    accion = partes[1]  # '0', '2', '5', 'personalizado', 'saltar'
+    pago_id = partes[2]
+    
+    # Obtener información del pago guardada en context
+    pago_key = f'pago_aprobado_{pago_id}'
+    if pago_key not in context.user_data:
+        await query.edit_message_text("❌ Información del pago no encontrada. Intenta nuevamente.")
+        return
+    
+    pago_info = context.user_data[pago_key]
+    user_id = pago_info['user_id']
+    nombre_usuario = pago_info['nombre_usuario']
+    monto = pago_info['monto']
+    referencia = pago_info['referencia']
+    
+    if accion == 'saltar':
+        # El admin decide no asignar puntos
+        await query.edit_message_text(
+            f"⏭️ **Asignación de puntos saltada**\n\n"
+            f"✅ Pago #{pago_id} aprobado sin asignar puntos.\n"
+            f"👤 Usuario: {nombre_usuario}\n"
+            f"💰 Monto: ${float(monto):.2f}"
+        )
+        
+        # Limpiar datos temporales
+        del context.user_data[pago_key]
+        return
+    
+    elif accion == 'personalizado':
+        # Pedir al admin que ingrese la cantidad personalizada
+        context.user_data[f'esperando_puntos_personalizado_{pago_id}'] = pago_info
+        
+        await query.edit_message_text(
+            f"✏️ **ASIGNAR PUNTOS PERSONALIZADOS**\n\n"
+            f"👤 Usuario: {nombre_usuario}\n"
+            f"💰 Monto: ${float(monto):.2f}\n"
+            f"🔢 Referencia: {referencia}\n\n"
+            f"📝 **Envía la cantidad de puntos a asignar:**\n"
+            f"(Ejemplo: 3, 10, 15, etc.)"
+        )
+        return
+    
+    else:
+        # Asignar puntos predefinidos (0, 2, o 5)
+        puntos = int(accion)
+        
+        # Asignar los puntos usando la función existente
+        descripcion = f"Puntos por pago aprobado #{pago_id} - ${float(monto):.2f}"
+        success = await agregar_puntos(user_id, puntos, "pago_manual", descripcion)
+        
+        if success:
+            # Obtener puntos actuales del usuario para mostrar
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT puntos_disponibles FROM usuarios_puntos WHERE user_id = %s", (user_id,))
+            puntos_actuales = cursor.fetchone()
+            conn.close()
+            
+            puntos_totales = puntos_actuales[0] if puntos_actuales else puntos
+            
+            mensaje_exito = (
+                f"✅ **Puntos asignados correctamente**\n\n"
+                f"👤 **Usuario:** {nombre_usuario}\n"
+                f"🆔 **ID Usuario:** {user_id}\n"
+                f"💰 **Monto pago:** ${float(monto):.2f}\n"
+                f"⭐ **Puntos otorgados:** +{puntos}\n"
+                f"🏆 **Puntos actuales:** {puntos_totales}\n"
+                f"📝 **Razón:** Pago aprobado manualmente\n\n"
+                f"📨 El usuario ha sido notificado."
+            )
+            
+            await query.edit_message_text(mensaje_exito)
+            
+            # Notificar al usuario
+            try:
+                mensaje_usuario = (
+                    f"⭐ **¡Has recibido puntos por tu pago!**\n\n"
+                    f"💰 **Pago:** ${float(monto):.2f}\n"
+                    f"🔢 **Referencia:** {referencia}\n"
+                    f"✅ **Estado:** Aprobado\n\n"
+                    f"🎁 **Puntos recibidos:** +{puntos}\n"
+                    f"🏆 **Total puntos:** {puntos_totales}\n"
+                    f"📝 **Motivo:** Pago verificado por administrador\n\n"
+                    f"Ver tus puntos: /mispuntos"
+                )
+                
+                await context.bot.send_message(chat_id=user_id, text=mensaje_usuario)
+                
+                # Verificar si alcanzó algún beneficio
+                await verificar_beneficios_puntos(user_id)
+                
+            except Exception as e:
+                print(f"❌ No se pudo notificar al usuario: {e}")
+            
+        else:
+            await query.edit_message_text("❌ Error al asignar puntos. Intenta nuevamente.")
+        
+        # Limpiar datos temporales
+        del context.user_data[pago_key]
+
+
+
+async def handle_puntos_personalizados(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Maneja la entrada de puntos personalizados por el admin"""
+    user_id = update.effective_user.id
+    
+    if not is_admin(user_id):
+        await update.message.reply_text("❌ No tienes permisos de administrador")
+        return
+    
+    # Buscar si hay alguna solicitud pendiente de puntos personalizados
+    pago_id = None
+    for key in context.user_data.keys():
+        if key.startswith('esperando_puntos_personalizado_'):
+            pago_id = key.split('_')[-1]
+            break
+    
+    if not pago_id:
+        await update.message.reply_text("❌ No hay solicitud pendiente de puntos personalizados")
+        return
+    
+    try:
+        puntos = int(update.message.text.strip())
+        
+        if puntos < 0:
+            await update.message.reply_text("❌ Los puntos no pueden ser negativos")
+            return
+            
+        if puntos > 100:  # Límite razonable
+            keyboard = [
+                [InlineKeyboardButton("✅ Sí, asignar", callback_data=f"confirmar_muchos_puntos_{pago_id}_{puntos}")],
+                [InlineKeyboardButton("❌ Cancelar", callback_data=f"cancelar_puntos_{pago_id}")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.message.reply_text(
+                f"⚠️ **¿Estás seguro?**\n\n"
+                f"Intentas asignar {puntos} puntos.\n"
+                f"Esta cantidad parece muy alta.\n\n"
+                f"¿Confirmar asignación?",
+                reply_markup=reply_markup
+            )
+            return
+        
+        # Obtener información del pago
+        pago_key = f'pago_aprobado_{pago_id}'
+        if pago_key not in context.user_data:
+            await update.message.reply_text("❌ Información del pago no encontrada")
+            return
+        
+        pago_info = context.user_data[pago_key]
+        user_id_pago = pago_info['user_id']
+        nombre_usuario = pago_info['nombre_usuario']
+        monto = pago_info['monto']
+        referencia = pago_info['referencia']
+        
+        # Asignar puntos
+        descripcion = f"Puntos personalizados por pago #{pago_id} - ${float(monto):.2f}"
+        success = await agregar_puntos(user_id_pago, puntos, "pago_manual", descripcion)
+        
+        if success:
+            # Obtener puntos actuales
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT puntos_disponibles FROM usuarios_puntos WHERE user_id = %s", (user_id_pago,))
+            puntos_actuales = cursor.fetchone()
+            conn.close()
+            
+            puntos_totales = puntos_actuales[0] if puntos_actuales else puntos
+            
+            mensaje_exito = (
+                f"✅ **Puntos personalizados asignados**\n\n"
+                f"👤 **Usuario:** {nombre_usuario}\n"
+                f"💰 **Monto pago:** ${float(monto):.2f}\n"
+                f"⭐ **Puntos otorgados:** +{puntos}\n"
+                f"🏆 **Puntos actuales:** {puntos_totales}\n"
+                f"📝 **Razón:** Asignación manual por admin\n\n"
+                f"📨 El usuario ha sido notificado."
+            )
+            
+            await update.message.reply_text(mensaje_exito)
+            
+            # Notificar al usuario
+            try:
+                mensaje_usuario = (
+                    f"⭐ **¡Has recibido puntos personalizados!**\n\n"
+                    f"💰 **Pago:** ${float(monto):.2f}\n"
+                    f"🎁 **Puntos recibidos:** +{puntos}\n"
+                    f"🏆 **Total puntos:** {puntos_totales}\n"
+                    f"📝 **Motivo:** Asignación especial por administrador\n\n"
+                    f"Ver tus puntos: /mispuntos"
+                )
+                
+                await context.bot.send_message(chat_id=user_id_pago, text=mensaje_usuario)
+                
+                # Verificar beneficios
+                await verificar_beneficios_puntos(user_id_pago)
+                
+            except Exception as e:
+                print(f"❌ No se pudo notificar al usuario: {e}")
+            
+            # Limpiar datos temporales
+            del context.user_data[pago_key]
+            del context.user_data[f'esperando_puntos_personalizado_{pago_id}']
+            
+        else:
+            await update.message.reply_text("❌ Error al asignar puntos")
+            
+    except ValueError:
+        await update.message.reply_text("❌ Por favor envía un número válido (ej: 3, 10, 15)")
+
 
 async def button_handler_puntos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Maneja los botones del sistema de puntos"""
@@ -4303,7 +4527,16 @@ def main():
     application.add_handler(CommandHandler("agregarpuntos", agregar_puntos_admin))
     application.add_handler(CommandHandler("quitarpuntos", quitar_puntos_admin))
     application.add_handler(CommandHandler("establecerpuntos", establecer_puntos_admin))
-        
+
+    # 🆕 Handler para botones de asignación de puntos
+    application.add_handler(CallbackQueryHandler(handle_asignacion_puntos, pattern=r'^puntos_.*'))
+
+    # 🆕 Handler para puntos personalizados (DEBE IR ANTES del handler general de texto)
+    application.add_handler(MessageHandler(
+        filters.TEXT & ~filters.COMMAND,
+        handle_puntos_personalizados
+    ))
+            
     # 7. NUEVOS HANDLERS PARA INCREMENTO DE SEMANAS
     application.add_handler(CommandHandler("incrementarsemana", incrementar_semana_manual))
     application.add_handler(CommandHandler("forzarincremento", forzar_incremento))
@@ -4440,7 +4673,6 @@ if __name__ == "__main__":
     # Ejecutar el bot en el HILO PRINCIPAL (esto es crucial)
     print("🤖 Iniciando bot en hilo principal...")
     main()
-
 
 
 
