@@ -4601,10 +4601,10 @@ def main():
     
     # CUARTO: Handler dinámico MODIFICADO (sin "verpago" que ya manejamos arriba)
     application.add_handler(MessageHandler(
-        filters.Regex(r'^\/(verimagen|confirmar|rechazar|borrar|borrarusuario|editarproducto|eliminarproducto|borrarpago|verificarreferido|rechazarreferido|verpuntosusuario)_\d+'),
+        filters.Regex(r'^\/(verimagen|confirmar|rechazar|borrar|borrarusuario|editarproducto|eliminarproducto|verpago|borrarpago|verificarreferido|rechazarreferido|verpuntosusuario|asignar)_\d+'),
         handle_dynamic_commands
     ))
-    
+        
     # Quinto: Handlers de botones
     application.add_handler(CallbackQueryHandler(handle_asignacion_puntos, pattern=r'^puntos_.*'))
     application.add_handler(CallbackQueryHandler(button_handler_asignacion, pattern=r'^asignar_.*'))
@@ -4726,6 +4726,7 @@ if __name__ == "__main__":
     # Ejecutar el bot en el HILO PRINCIPAL (esto es crucial)
     print("🤖 Iniciando bot en hilo principal...")
     main()
+
 
 
 
