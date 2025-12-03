@@ -4503,10 +4503,10 @@ def main():
         .build()
     )
     
-    # 🚨 DIAGNÓSTICO - Agregar handler de prueba
-    print("🟡 Agregando handler para /verpagostodos...")
-    application.add_handler(CommandHandler("verpagostodos", verpagostodos))
-    print("🟡 Handler agregado")
+    # 🚨 ELIMINAR ESTA LÍNEA (NO DEJES EL HANDLER DE PRUEBA):
+    # print("🟡 Agregando handler para /verpagostodos...")
+    # application.add_handler(CommandHandler("verpagostodos", verpagostodos))
+    # print("🟡 Handler agregado")
     
     # =============================================
     # 🎯 TODOS LOS HANDLERS COMPLETOS
@@ -4537,12 +4537,12 @@ def main():
     application.add_handler(CommandHandler("adminverproductos", admin_ver_productos))
     application.add_handler(CommandHandler("adminagregarproducto", admin_agregar_producto))
     application.add_handler(CommandHandler("verpagos", verpagos))
-    # 🚨 AQUÍ VA EL FIX - PEGA ESTO JUSTO DESPUÉS:
-    async def arreglar_verpagostodos(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await update.message.reply_text("✅ FUNCIONA: Comando /verpagostodos arreglado")
-
-    application.add_handler(CommandHandler("verpagostodos", arreglar_verpagostodos))
-    print("✅ FIX APLICADO")
+    
+    # ✅ AGREGAR EL HANDLER CORRECTO DE VERPAGOSTODOS (NO EL DE PRUEBA)
+    # 🚨 ESTA ES LA LÍNEA IMPORTANTE - USAR LA FUNCIÓN REAL, NO LA DE PRUEBA
+    application.add_handler(CommandHandler("verpagostodos", verpagostodos))
+    print("✅ Handler correcto /verpagostodos agregado")
+    
     application.add_handler(CommandHandler("verusuarios", verusuarios))
     application.add_handler(CommandHandler("estadocontador", estado_contador))
     application.add_handler(CommandHandler("pausarcontador", pausar_contador))
@@ -4561,9 +4561,7 @@ def main():
 
     # 🆕 Handler para botones de asignación de puntos
     application.add_handler(CallbackQueryHandler(handle_asignacion_puntos, pattern=r'^puntos_.*'))
-
-
-            
+    
     # 7. NUEVOS HANDLERS PARA INCREMENTO DE SEMANAS
     application.add_handler(CommandHandler("incrementarsemana", incrementar_semana_manual))
     application.add_handler(CommandHandler("forzarincremento", forzar_incremento))
@@ -4576,12 +4574,12 @@ def main():
 
     # 🆕 NUEVO: Handler para asignación por nombre
     application.add_handler(CommandHandler("asignar", buscar_usuario_asignar))
+    
     # 9. Handler para mensajes normales
     application.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND,
         handle_message
     ))
-
     
     # 10. Handlers de archivos
     application.add_handler(MessageHandler(filters.PHOTO, handle_image))
@@ -4644,7 +4642,7 @@ def main():
     print("   /referidos - Invitar amigos")
     print("   /pagarealizado - Registrar pago")
     print("   /mistatus - Estado de mis pagos")
-    print("\n📍 COMANDOS PARA ADMIN (5908252094, 7228946245, 1074083869):")  # ← ACTUALIZADO
+    print("\n📍 COMANDOS PARA ADMIN (5908252094, 7228946245, 1074083869):")
     print("   /verasignaciones - Ver todas las asignaciones")
     print("   /asignar_X - Asignar productos a usuario")
     print("   /adminverproductos - Ver catálogo completo")
@@ -4701,6 +4699,7 @@ if __name__ == "__main__":
     # Ejecutar el bot en el HILO PRINCIPAL (esto es crucial)
     print("🤖 Iniciando bot en hilo principal...")
     main()
+
 
 
 
