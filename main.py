@@ -3399,52 +3399,109 @@ async def configurar_semanas(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def verpagostodos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Muestra TODOS los pagos con opciones simplificadas (solo admin)"""
-    print(f"🟢 DEBUG: /verpagostodos ejecutado por {update.effective_user.id}")
+    print(f"\n" + "="*60)
+    print(f"🚀 DEBUG: /verpagostodos EJECUTÁNDOSE")
+    print(f"🟡 Usuario ID: {update.effective_user.id}")
+    print(f"🟡 Es admin: {is_admin(update.effective_user.id)}")
     
     if not is_admin(update.effective_user.id):
-        print(f"🔴 DEBUG: Usuario {update.effective_user.id} NO es admin")
+        print(f"❌ DEBUG: Usuario NO es admin")
         await update.message.reply_text("❌ No tienes permisos de administrador")
         return
     
-    print(f"🟢 DEBUG: Usuario {update.effective_user.id} es admin, ejecutando función...")
+    print(f"✅ DEBUG: Usuario ES admin, procediendo...")
     
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT p.id, p.user_id, u.first_name, u.last_name, p.referencia, p.monto, p.fecha, p.estado 
-        FROM pagos p 
-        LEFT JOIN usuarios u ON p.user_id = u.user_id 
-        ORDER BY p.fecha DESC
-        LIMIT 50
-    """)
-    pagos = cursor.fetchall()
-    conn.close()
-    
-    
-    if not pagos:
-        await update.message.reply_text("📭 No hay pagos registrados en el sistema")
-        return
-    
-    mensaje = "📋 **TODOS LOS PAGOS - LISTA COMPLETA**\n\n"
-    
-    for pago_id, user_id, first_name, last_name, referencia, monto, fecha, estado in pagos:
-        nombre_completo = f"{first_name or ''} {last_name or ''}".strip()
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT p.id, p.user_id, u.first_name, u.last_name, p.referencia, p.monto, p.fecha, p.estado 
+            FROM pagos p 
+            LEFT JOIN usuarios u ON p.user_id = u.user_id 
+            ORDER BY p.fecha DESC
+            LIMIT 50
+        """)
+        pagos = cursor.fetchall()
+        conn.close()
         
-        # Iconos según estado
-        icono = "✅" if estado == "aprobado" else "⏳" if estado == "pendiente" else "❌"
+        print(f"📊 DEBUG: Encontrados {len(pagos)} pagos")
         
-        mensaje += f"{icono} **ID Pago:** {pago_id}\n"
-        mensaje += f"👤 **Usuario:** {nombre_completo or 'N/A'} (ID: {user_id})\n"
-        mensaje += f"💰 **Monto:** ${monto:.2f}\n"
-        mensaje += f"🔢 **Referencia:** {referencia}\n"
-        mensaje += f"📅 **Fecha:** {fecha.strftime('%d/%m/%Y %H:%M')}\n"
-        mensaje += f"📊 **Estado:** {estado}\n"
-        mensaje += f"👁️ /verpago_{pago_id} | 🗑️ /borrarpago_{pago_id}\n"
-        mensaje += "━━━━━━━━━━━━━━━━━━━━\n\n"
+        if not pagos:
+            print(f"📭 DEBUG: No hay pagos, enviando mensaje vacío")
+            await update.message.reply_text("📭 No hay pagos registrados en el sistema")
+            return
+        
+        # CONSTRUIR MENSAJE CON LÍMITES
+        mensaje = "📋 **TODOS LOS PAGOS - LISTA COMPLETA**\n\n"
+        
+        contador = 0
+        caracteres_totales = 0
+        
+        for pago_id, user_id, first_name, last_name, referencia, monto, fecha, estado in pagos:
+            nombre_completo = f"{first_name or ''} {last_name or ''}".strip()
+            
+            # Iconos según estado
+            icono = "✅" if estado == "aprobado" else "⏳" if estado == "pendiente" else "❌"
+            
+            # Formatear cada pago
+            entrada = f"{icono} **ID Pago:** {pago_id}\n"
+            entrada += f"👤 **Usuario:** {nombre_completo or 'N/A'} (ID: {user_id})\n"
+            entrada += f"💰 **Monto:** ${monto:.2f}\n"
+            entrada += f"🔢 **Referencia:** {referencia}\n"
+            entrada += f"📅 **Fecha:** {fecha.strftime('%d/%m/%Y %H:%M')}\n"
+            entrada += f"📊 **Estado:** {estado}\n"
+            entrada += f"👁️ /verpago_{pago_id} | 🗑️ /borrarpago_{pago_id}\n"
+            entrada += "━━━━━━━━━━━━━━━━━━━━\n\n"
+            
+            # Verificar límite de caracteres (Telegram: 4096 caracteres máximo)
+            if len(mensaje) + len(entrada) > 3900:  # Dejamos margen
+                print(f"⚠️ DEBUG: Límite de caracteres alcanzado en pago #{contador}")
+                mensaje += f"\n📢 **Mostrando primeros {contador} pagos de {len(pagos)}**\n"
+                mensaje += "💡 Use filtros más específicos para ver el resto."
+                break
+            
+            mensaje += entrada
+            caracteres_totales = len(mensaje)
+            contador += 1
+        
+        mensaje += f"\n📊 **Total mostrados:** {contador} de {len(pagos)} pagos\n"
+        mensaje += "💡 **Leyenda:** ✅ Aprobado | ⏳ Pendiente | ❌ Rechazado"
+        
+        print(f"📝 DEBUG: Mensaje construido - {caracteres_totales} caracteres, {contador} pagos")
+        print(f"📝 DEBUG: Primeros 200 caracteres del mensaje:\n{mensaje[:200]}...")
+        
+        # INTENTAR ENVIAR CON MANEJO DE ERRORES
+        try:
+            await update.message.reply_text(mensaje)
+            print(f"✅ DEBUG: Mensaje enviado exitosamente")
+        except Exception as e:
+            print(f"❌ DEBUG: Error al enviar mensaje: {e}")
+            print(f"❌ DEBUG: Tipo de error: {type(e).__name__}")
+            
+            # Intentar enviar en partes si es demasiado largo
+            if "Message is too long" in str(e) or len(mensaje) > 4000:
+                print(f"🔄 DEBUG: Intentando dividir mensaje...")
+                
+                # Dividir mensaje en partes
+                partes = [mensaje[i:i+4000] for i in range(0, len(mensaje), 4000)]
+                for i, parte in enumerate(partes):
+                    try:
+                        await update.message.reply_text(f"📋 **Parte {i+1}/{len(partes)}**\n\n{parte}")
+                        print(f"✅ DEBUG: Parte {i+1} enviada")
+                    except Exception as e2:
+                        print(f"❌ DEBUG: Error en parte {i+1}: {e2}")
+                        await update.message.reply_text(f"❌ Error al mostrar parte {i+1}")
+            else:
+                # Otro tipo de error
+                await update.message.reply_text(f"❌ Error al mostrar los pagos: {str(e)[:100]}")
+        
+    except Exception as e:
+        print(f"❌ DEBUG: Error general en verpagostodos: {e}")
+        import traceback
+        traceback.print_exc()
+        await update.message.reply_text(f"❌ Error al obtener pagos: {str(e)[:100]}")
     
-    mensaje += "💡 **Leyenda:** ✅ Aprobado | ⏳ Pendiente | ❌ Rechazado"
-    
-    await update.message.reply_text(mensaje)
+    print(f"="*60 + "\n")
 
 async def verpago_detalle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Ver detalles de un pago específico (admin)"""
@@ -4669,7 +4726,6 @@ if __name__ == "__main__":
     # Ejecutar el bot en el HILO PRINCIPAL (esto es crucial)
     print("🤖 Iniciando bot en hilo principal...")
     main()
-
 
 
 
