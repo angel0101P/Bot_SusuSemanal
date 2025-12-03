@@ -4481,10 +4481,6 @@ def main():
     """Función principal - BOT EN HILO PRINCIPAL"""
     print("🎯 INICIANDO BOT DE TELEGRAM EN RENDER...")
     
-    # 🚨 DIAGNÓSTICO - Verificar que la función existe
-    print(f"🔍 Función verpagostodos existe: {'verpagostodos' in globals()}")
-    print(f"🔍 Tipo: {type(verpagostodos) if 'verpagostodos' in globals() else 'NO EXISTE'}")
-    
     # 1. Inicializar base de datos
     print("🗄️ Inicializando base de datos...")
     init_db()
@@ -4503,97 +4499,71 @@ def main():
         .build()
     )
     
-    # 🚨 ELIMINAR ESTA LÍNEA (NO DEJES EL HANDLER DE PRUEBA):
-    # print("🟡 Agregando handler para /verpagostodos...")
-    # application.add_handler(CommandHandler("verpagostodos", verpagostodos))
-    # print("🟡 Handler agregado")
-    
     # =============================================
-    # 🎯 TODOS LOS HANDLERS COMPLETOS
+    # 🎯 ORDEN CORREGIDO DE HANDLERS - SOLUCIÓN DEFINITIVA
     # =============================================
     
-    # 1. Handlers de comandos básicos para usuarios
+    # 🚨 PRIMERO Y MÁS IMPORTANTE: El handler específico para /verpagostodos
+    # Debe ir ANTES de cualquier otro handler que pueda interferir
+    application.add_handler(CommandHandler("verpagostodos", verpagostodos))
+    print("✅ Handler /verpagostodos agregado (PRIMER LUGAR)")
+    
+    # 🚨 SEGUNDO: El handler para /verpago_XXXX (que era parte del problema)
+    # Agregarlo como handler específico
+    application.add_handler(CommandHandler("verpago", verpago_detalle))
+    
+    # TERCERO: Otros handlers de comandos específicos
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("cancelar", cancelar))
     application.add_handler(CommandHandler("miperfil", miperfil))
     application.add_handler(CommandHandler("pagarealizado", pagarealizado))
     application.add_handler(CommandHandler("mistatus", mistatus))
-    
-    # 🆕 2. Handlers para sistema de puntos y referidos
     application.add_handler(CommandHandler("mispuntos", mispuntos))
     application.add_handler(CommandHandler("referidos", referidos))
-    
-    # 3. Handlers para sistema de asignación administrativa
     application.add_handler(CommandHandler("verasignaciones", ver_asignaciones))
-    
-    # 4. Handlers modificados para productos (sin carrito)
     application.add_handler(CommandHandler("catalogo", catalogo_solo_lectura))
     application.add_handler(CommandHandler("misplanes", mis_planes_mejorado))
-
-    # 🆕 NUEVO COMANDO PARA ADELANTO COMPLETO
     application.add_handler(CommandHandler("adelantarcompleto", adelantar_semana_completo))
-    
-    # 5. Handlers de administrador
     application.add_handler(CommandHandler("adminverproductos", admin_ver_productos))
     application.add_handler(CommandHandler("adminagregarproducto", admin_agregar_producto))
     application.add_handler(CommandHandler("verpagos", verpagos))
-    
-    # ✅ AGREGAR EL HANDLER CORRECTO DE VERPAGOSTODOS (NO EL DE PRUEBA)
-    # 🚨 ESTA ES LA LÍNEA IMPORTANTE - USAR LA FUNCIÓN REAL, NO LA DE PRUEBA
-    application.add_handler(CommandHandler("verpagostodos", verpagostodos))
-    print("✅ Handler correcto /verpagostodos agregado")
-    
     application.add_handler(CommandHandler("verusuarios", verusuarios))
     application.add_handler(CommandHandler("estadocontador", estado_contador))
     application.add_handler(CommandHandler("pausarcontador", pausar_contador))
     application.add_handler(CommandHandler("reanudarcontador", reanudar_contador))
     application.add_handler(CommandHandler("configurarsemanas", configurar_semanas))
-    
-    # 🆕 6. Handlers para sistema de puntos (admin)
     application.add_handler(CommandHandler("rankingpuntos", ranking_puntos))
     application.add_handler(CommandHandler("verreferidos", ver_referidos_pendientes))
     application.add_handler(CommandHandler("vaciarranking", vaciar_ranking_puntos))
-    
-    # 🆕 Handlers para edición de puntos (admin)
     application.add_handler(CommandHandler("agregarpuntos", agregar_puntos_admin))
     application.add_handler(CommandHandler("quitarpuntos", quitar_puntos_admin))
     application.add_handler(CommandHandler("establecerpuntos", establecer_puntos_admin))
-
-    # 🆕 Handler para botones de asignación de puntos
-    application.add_handler(CallbackQueryHandler(handle_asignacion_puntos, pattern=r'^puntos_.*'))
-    
-    # 7. NUEVOS HANDLERS PARA INCREMENTO DE SEMANAS
     application.add_handler(CommandHandler("incrementarsemana", incrementar_semana_manual))
     application.add_handler(CommandHandler("forzarincremento", forzar_incremento))
-    
-    # 8. Handler para comandos dinámicos de asignación (EXCLUYENDO /asignar)
-    application.add_handler(MessageHandler(
-        filters.Regex(r'^\/(verimagen|confirmar|rechazar|borrar|borrarusuario|editarproducto|eliminarproducto|verpago|borrarpago|verificarreferido|rechazarreferido|verpuntosusuario)_\d+'),
-        handle_dynamic_commands
-    ))
-
-    # 🆕 NUEVO: Handler para asignación por nombre
     application.add_handler(CommandHandler("asignar", buscar_usuario_asignar))
     
-    # 9. Handler para mensajes normales
+    # CUARTO: Handler dinámico MODIFICADO (sin "verpago" que ya manejamos arriba)
+    application.add_handler(MessageHandler(
+        filters.Regex(r'^\/(verimagen|confirmar|rechazar|borrar|borrarusuario|editarproducto|eliminarproducto|borrarpago|verificarreferido|rechazarreferido|verpuntosusuario)_\d+'),
+        handle_dynamic_commands
+    ))
+    
+    # Quinto: Handlers de botones
+    application.add_handler(CallbackQueryHandler(handle_asignacion_puntos, pattern=r'^puntos_.*'))
+    application.add_handler(CallbackQueryHandler(button_handler_asignacion, pattern=r'^asignar_.*'))
+    application.add_handler(CallbackQueryHandler(button_handler_puntos, pattern=r'^(compartir_codigo|ver_mis_puntos|ir_a_referidos|actualizar_puntos)$'))
+    application.add_handler(CallbackQueryHandler(button_handler))
+    
+    # Sexto: Handler para mensajes normales (DEBE IR AL FINAL)
     application.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND,
         handle_message
     ))
     
-    # 10. Handlers de archivos
+    # Séptimo: Handlers de archivos
     application.add_handler(MessageHandler(filters.PHOTO, handle_image))
     application.add_handler(MessageHandler(filters.Document.IMAGE, handle_image))
     application.add_handler(MessageHandler(filters.Document.ALL, handle_all_documents))
-    
-    # 11. Handler de botones de asignación
-    application.add_handler(CallbackQueryHandler(button_handler_asignacion, pattern=r'^asignar_.*'))
-    
-    # 🆕 12. Handler de botones para sistema de puntos
-    application.add_handler(CallbackQueryHandler(button_handler_puntos, pattern=r'^(compartir_codigo|ver_mis_puntos|ir_a_referidos|actualizar_puntos)$'))
-    
-    # 13. Handler de botones generales (para otros botones)
-    application.add_handler(CallbackQueryHandler(button_handler))
     
     # ✅ AGREGAR JOB PARA INCREMENTO AUTOMÁTICO
     try:
@@ -4699,6 +4669,7 @@ if __name__ == "__main__":
     # Ejecutar el bot en el HILO PRINCIPAL (esto es crucial)
     print("🤖 Iniciando bot en hilo principal...")
     main()
+
 
 
 
