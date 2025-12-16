@@ -4541,6 +4541,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =============================================
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Maneja TODOS los mensajes de texto en el orden correcto"""
     print(f"🔵 MENSAJE RECIBIDO: {update.message.text}")
     print(f"🔵 USER DATA: {context.user_data}")
     
@@ -4571,7 +4572,31 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_rechazo_motivo(update, context)
         return
     
-    # 6. Verificar si estamos esperando datos de pago
+    # 6. Verificar si hay solicitud pendiente de puntos personalizados (solo admin)
+    if is_admin(user_id):
+        tiene_solicitud_puntos = False
+        for key in context.user_data.keys():
+            if key.startswith('esperando_puntos_personalizado_'):
+                tiene_solicitud_puntos = True
+                break
+        
+        if tiene_solicitud_puntos:
+            await handle_puntos_personalizados(update, context)
+            return
+    
+    # 7. Verificar si hay solicitud pendiente de semanas personalizadas (solo admin)
+    if is_admin(user_id):
+        tiene_solicitud_semanas = False
+        for key in context.user_data.keys():
+            if key.startswith('config_personalizado_'):
+                tiene_solicitud_semanas = True
+                break
+        
+        if tiene_solicitud_semanas:
+            await handle_semanas_personalizadas(update, context)
+            return
+    
+    # 8. Verificar si estamos esperando datos de pago (USUARIOS NORMALES)
     if context.user_data.get('esperando_datos_pago'):
         print("✅ SÍ estaba esperando datos de pago")
         
@@ -4612,12 +4637,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['esperando_imagen'] = True
         print(f"🟡 USER DATA después de procesar texto: {context.user_data}")
         
-    else:
-        print("❌ NO estaba esperando datos de pago - mensaje normal")
-        await update.message.reply_text(
-            "Usa /pagarealizado para registrar un pago o /catalogo para ver productos"
-        )
-
+        return
+    
+    # 9. Si no es nada de lo anterior, mensaje normal
+    print("❌ NO estaba esperando nada específico - mensaje normal")
+    await update.message.reply_text(
+        "Usa /pagarealizado para registrar un pago o /catalogo para ver productos\n"
+        "Para ayuda usa /start"
+    )
 # =============================================
 # FUNCIONES DE MANEJO DE PRODUCTOS
 # =============================================
@@ -5738,25 +5765,13 @@ def main():
         handle_dynamic_commands
     ))
     
-    # 🚨 4. CUARTO: Handler específico para semanas personalizadas (DEBE IR ANTES del handler general)
-    application.add_handler(MessageHandler(
-        filters.TEXT & ~filters.COMMAND & filters.User(ADMIN_IDS),  # Solo para admins
-        handle_semanas_personalizadas
-    ))
-    
-    # 🚨 5. QUINTO: Handler para mensajes normales (DEBE IR DESPUÉS del específico)
+    # 🚨 4. CUARTO: Handler para mensajes normales de TODO tipo
     application.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND,
         handle_message
     ))
     
-    # 🚨 6. SEXTO: Handler específico para puntos personalizados (DEBE IR ANTES del handler general)
-    application.add_handler(MessageHandler(
-        filters.TEXT & ~filters.COMMAND & filters.User(ADMIN_IDS),  # Solo para admins
-        handle_puntos_personalizados
-    ))
-    
-    # 🚨 7. SÉPTIMO: Handlers de archivos
+    # 🚨 5. QUINTO: Handlers de archivos (IMPORTANTE: después de texto)
     application.add_handler(MessageHandler(filters.PHOTO, handle_image))
     application.add_handler(MessageHandler(filters.Document.IMAGE, handle_image))
     application.add_handler(MessageHandler(filters.Document.ALL, handle_all_documents))
@@ -5858,6 +5873,7 @@ if __name__ == "__main__":
     # Ejecutar el bot en el HILO PRINCIPAL (esto es crucial)
     print("🤖 Iniciando bot en hilo principal...")
     main()
+
 
 
 
