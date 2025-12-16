@@ -225,7 +225,7 @@ def init_db():
                 contador_pausado BOOLEAN DEFAULT FALSE,
                 fecha_inicio TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 fecha_ultimo_pago TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                fecha_configuracion TIMESTAMP DEFAULT CURRENT_TIMESTAMP  -- NUEVO
+                fecha_configuracion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
         
@@ -266,17 +266,27 @@ def init_db():
             )
         ''')
         
-        # Insertar configuración por defecto
-        cursor.execute('''
-            INSERT INTO config_pagos (semanas_default) 
-            SELECT 10 
-            WHERE NOT EXISTS (SELECT 1 FROM config_pagos)
-        ''')
-        
         conn.commit()
         conn.close()
 
+        # Primero reparar tablas para asegurar que la columna existe
         reparar_tablas()
+        
+        # Ahora intentar insertar configuración por defecto
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO config_pagos (semanas_default) 
+                SELECT 10 
+                WHERE NOT EXISTS (SELECT 1 FROM config_pagos)
+            ''')
+            conn.commit()
+            conn.close()
+            print("✅ Configuración por defecto insertada")
+        except Exception as insert_error:
+            print(f"⚠️ Error al insertar configuración: {insert_error}")
+            # Si falla, probablemente ya existe un registro
         
         print("✅ Base de datos inicializada con semanas individuales")
         
@@ -5690,6 +5700,7 @@ if __name__ == "__main__":
     # Ejecutar el bot en el HILO PRINCIPAL (esto es crucial)
     print("🤖 Iniciando bot en hilo principal...")
     main()
+
 
 
 
