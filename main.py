@@ -39,7 +39,7 @@ def reparar_tablas():
     """Reparar tablas existentes agregando columnas faltantes"""
     print("🔧 Verificando y reparando columnas faltantes...")
     
-    # Verificar y agregar columna 'descripcion'
+    # Verificar y agregar columna 'descripcion' en productos
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -58,7 +58,7 @@ def reparar_tablas():
         except Exception as e:
             print(f"❌ Error al agregar 'descripcion': {e}")
     
-    # Verificar y agregar columna 'categoria'
+    # Verificar y agregar columna 'categoria' en productos
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -76,7 +76,6 @@ def reparar_tablas():
             print("✅ Columna 'categoria' agregada")
         except Exception as e:
             print(f"❌ Error al agregar 'categoria': {e}")
-    
     
     # Verificar y agregar columna 'contador_pausado' en planes_pago
     try:
@@ -97,7 +96,7 @@ def reparar_tablas():
         except Exception as e:
             print(f"❌ Error al agregar 'contador_pausado': {e}")
     
-    # ✅ NUEVA: Verificar y agregar columna 'fecha_ultimo_pago' en planes_pago
+    # ✅ Verificar y agregar columna 'fecha_ultimo_pago' en planes_pago
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -115,6 +114,44 @@ def reparar_tablas():
             print("✅ Columna 'fecha_ultimo_pago' agregada")
         except Exception as e:
             print(f"❌ Error al agregar 'fecha_ultimo_pago': {e}")
+    
+    # ✅ Verificar y agregar columna 'fecha_configuracion' en planes_pago
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT fecha_configuracion FROM planes_pago LIMIT 1")
+        conn.close()
+        print("✅ Columna 'fecha_configuracion' existe")
+    except Exception:
+        print("⚠️ Agregando columna 'fecha_configuracion'...")
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("ALTER TABLE planes_pago ADD COLUMN fecha_configuracion TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+            conn.commit()
+            conn.close()
+            print("✅ Columna 'fecha_configuracion' agregada")
+        except Exception as e:
+            print(f"❌ Error al agregar 'fecha_configuracion': {e}")
+    
+    # ✅ Verificar y agregar columna 'semanas_default' en config_pagos
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT semanas_default FROM config_pagos LIMIT 1")
+        conn.close()
+        print("✅ Columna 'semanas_default' existe")
+    except Exception:
+        print("⚠️ Agregando columna 'semanas_default'...")
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("ALTER TABLE config_pagos ADD COLUMN semanas_default INT DEFAULT 10")
+            conn.commit()
+            conn.close()
+            print("✅ Columna 'semanas_default' agregada")
+        except Exception as e:
+            print(f"❌ Error al agregar 'semanas_default': {e}")
     
     print("🎉 Verificación de columnas completada")
 
@@ -236,45 +273,12 @@ def init_db():
             WHERE NOT EXISTS (SELECT 1 FROM config_pagos)
         ''')
         
- # ✅ NUEVA: Verificar y agregar columna 'fecha_configuracion' en planes_pago
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT fecha_configuracion FROM planes_pago LIMIT 1")
+        conn.commit()
         conn.close()
-        print("✅ Columna 'fecha_configuracion' existe")
-    except Exception:
-        print("⚠️ Agregando columna 'fecha_configuracion'...")
-        try:
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            cursor.execute("ALTER TABLE planes_pago ADD COLUMN fecha_configuracion TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
-            conn.commit()
-            conn.close()
-            print("✅ Columna 'fecha_configuracion' agregada")
-        except Exception as e:
-            print(f"❌ Error al agregar 'fecha_configuracion': {e}")
-    
-    # ✅ NUEVA: Verificar y agregar columna 'semanas_default' en config_pagos
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT semanas_default FROM config_pagos LIMIT 1")
-        conn.close()
-        print("✅ Columna 'semanas_default' existe")
-    except Exception:
-        print("⚠️ Agregando columna 'semanas_default'...")
-        try:
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            cursor.execute("ALTER TABLE config_pagos ADD COLUMN semanas_default INT DEFAULT 10")
-            conn.commit()
-            conn.close()
-            print("✅ Columna 'semanas_default' agregada")
-        except Exception as e:
-            print(f"❌ Error al agregar 'semanas_default': {e}")
-    
-    print("🎉 Verificación de columnas completada")
+
+        reparar_tablas()
+        
+        print("✅ Base de datos inicializada con semanas individuales")
         
     except Exception as e:
         print(f"❌ Error al inicializar BD: {e}")
@@ -5686,6 +5690,7 @@ if __name__ == "__main__":
     # Ejecutar el bot en el HILO PRINCIPAL (esto es crucial)
     print("🤖 Iniciando bot en hilo principal...")
     main()
+
 
 
 
