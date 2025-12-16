@@ -5416,17 +5416,19 @@ def main():
     )
     
     # =============================================
-    # 🎯 ORDEN CORREGIDO DE HANDLERS - SISTEMA ACTUALIZADO
+    # 🎯 ORDEN CORREGIDO - ¡IMPORTANTE!
     # =============================================
     
-    # 🚨 PRIMERO: Handlers específicos importantes
-    application.add_handler(CommandHandler("verpagostodos", verpagostodos))
-    print("✅ Handler /verpagostodos agregado (PRIMER LUGAR)")
+    # 🚨 1. PRIMERO: CallbackQueryHandler (botones)
+    application.add_handler(CallbackQueryHandler(handle_asignacion_puntos, pattern=r'^puntos_.*'))
+    application.add_handler(CallbackQueryHandler(button_handler_asignacion, pattern=r'^asignar_.*'))
+    application.add_handler(CallbackQueryHandler(button_handler_puntos, pattern=r'^(compartir_codigo|ver_mis_puntos|ir_a_referidos|actualizar_puntos)$'))
+    application.add_handler(CallbackQueryHandler(button_handler_contadores, pattern=r'^(avanzar_forzar|reanudar_y_avanzar)_'))
+    application.add_handler(CallbackQueryHandler(button_handler_config_semanas, pattern=r'^(config_usuario|config_semanas|config_personalizado|reiniciar_semanas|mantener_semanas|cancelar_config)'))
+    application.add_handler(CallbackQueryHandler(button_handler))
     
-    # 🚨 SEGUNDO: Handler para /verpago
-    application.add_handler(CommandHandler("verpago", verpago_detalle))
-    
-    # TERCERO: Comandos básicos para usuarios
+    # 🚨 2. SEGUNDO: TODOS los CommandHandler
+    # Comandos de usuario
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("cancelar", cancelar))
     application.add_handler(CommandHandler("miperfil", miperfil))
@@ -5435,30 +5437,32 @@ def main():
     application.add_handler(CommandHandler("mispuntos", mispuntos))
     application.add_handler(CommandHandler("referidos", referidos))
     application.add_handler(CommandHandler("catalogo", catalogo_solo_lectura))
-    application.add_handler(CommandHandler("misplanes", mis_planes_mejorado))  # ← ACTUALIZADO
+    application.add_handler(CommandHandler("misplanes", mis_planes_mejorado))
     
-    # CUARTO: Comandos de administración (CATÁLOGO)
+    # Comandos de admin - Catálogo
     application.add_handler(CommandHandler("adminverproductos", admin_ver_productos))
     application.add_handler(CommandHandler("adminagregarproducto", admin_agregar_producto))
     application.add_handler(CommandHandler("verasignaciones", ver_asignaciones))
     application.add_handler(CommandHandler("asignar", buscar_usuario_asignar))
     
-    # QUINTO: Comandos de administración (PAGOS)
+    # Comandos de admin - Pagos
     application.add_handler(CommandHandler("verpagos", verpagos))
+    application.add_handler(CommandHandler("verpagostodos", verpagostodos))
+    application.add_handler(CommandHandler("verpago", verpago_detalle))
     application.add_handler(CommandHandler("verusuarios", verusuarios))
     
-    # SEXTO: 🆕 SISTEMA DE CONTADORES INDIVIDUALES (NUEVO)
+    # Comandos de admin - Contadores
     application.add_handler(CommandHandler("vercontadores", control_contador_usuario))
     application.add_handler(CommandHandler("avanzartodos", avanzar_todos_usuarios))
     application.add_handler(CommandHandler("pausartodos", pausar_todos_usuarios))
     application.add_handler(CommandHandler("reanudartodos", reanudar_todos_usuarios))
     
-    # SÉPTIMO: 🆕 SISTEMA DE CONFIGURACIÓN INDIVIDUAL DE SEMANAS (NUEVO)
+    # Comandos de admin - Configuración
     application.add_handler(CommandHandler("configurarsemanasdefault", configurar_semanas_default))
     application.add_handler(CommandHandler("configurarbusqueda", configurar_semanas_busqueda))
     application.add_handler(CommandHandler("verconfiguraciones", ver_configuraciones_semanas))
     
-    # OCTAVO: Sistema de puntos (existente)
+    # Comandos de admin - Puntos
     application.add_handler(CommandHandler("rankingpuntos", ranking_puntos))
     application.add_handler(CommandHandler("verreferidos", ver_referidos_pendientes))
     application.add_handler(CommandHandler("vaciarranking", vaciar_ranking_puntos))
@@ -5466,17 +5470,7 @@ def main():
     application.add_handler(CommandHandler("quitarpuntos", quitar_puntos_admin))
     application.add_handler(CommandHandler("establecerpuntos", establecer_puntos_admin))
     
-    # ⚠️ NOVENO: ELIMINAR COMANDOS OBSOLETOS - COMENTAR O ELIMINAR ESTOS:
-    # ❌ ELIMINAR ESTAS LÍNEAS (ya no existen):
-    # application.add_handler(CommandHandler("estadocontador", estado_contador))  # ❌ OBSOLETO
-    # application.add_handler(CommandHandler("pausarcontador", pausar_contador))  # ❌ OBSOLETO  
-    # application.add_handler(CommandHandler("reanudarcontador", reanudar_contador))  # ❌ OBSOLETO
-    # application.add_handler(CommandHandler("configurarsemanas", configurar_semanas))  # ❌ OBSOLETO
-    # application.add_handler(CommandHandler("incrementarsemana", incrementar_semana_manual))  # ❌ OBSOLETO
-    # application.add_handler(CommandHandler("forzarincremento", forzar_incremento))  # ❌ OBSOLETO
-    # application.add_handler(CommandHandler("adelantarcompleto", adelantar_semana_completo))  # ❌ OBSOLETO
-    
-    # DÉCIMO: Handlers dinámicos para usuarios específicos (NUEVOS)
+    # 🚨 3. TERCERO: Handlers dinámicos (SOLO después de CommandHandler)
     application.add_handler(MessageHandler(
         filters.Regex(r'^\/(avanzar|pausar|reanudar)_\d+'),
         handle_contador_individual
@@ -5487,49 +5481,25 @@ def main():
         handle_configuracion_dinamica
     ))
     
-    # Handler dinámico existente (mantener)
     application.add_handler(MessageHandler(
         filters.Regex(r'^\/(verimagen|confirmar|rechazar|borrar|borrarusuario|editarproducto|eliminarproducto|verpago|borrarpago|verificarreferido|rechazarreferido|verpuntosusuario|asignar)_\d+'),
         handle_dynamic_commands
     ))
-        
-    # UNDÉCIMO: Handlers de botones
-    application.add_handler(CallbackQueryHandler(handle_asignacion_puntos, pattern=r'^puntos_.*'))
-    application.add_handler(CallbackQueryHandler(button_handler_asignacion, pattern=r'^asignar_.*'))
-    application.add_handler(CallbackQueryHandler(button_handler_puntos, pattern=r'^(compartir_codigo|ver_mis_puntos|ir_a_referidos|actualizar_puntos)$'))
     
-    # 🆕 Handlers de botones para nuevos sistemas
-    application.add_handler(CallbackQueryHandler(
-        button_handler_contadores, 
-        pattern=r'^(avanzar_forzar|reanudar_y_avanzar)_'
-    ))
-    
-    application.add_handler(CallbackQueryHandler(
-        button_handler_config_semanas,
-        pattern=r'^(config_usuario|config_semanas|config_personalizado|reiniciar_semanas|mantener_semanas|cancelar_config)'
-    ))
-    
-    # Handler general de botones (mantener al final)
-    application.add_handler(CallbackQueryHandler(button_handler))
-    
-    # DUODÉCIMO: Handler para mensajes normales (DEBE IR AL FINAL)
+    # 🚨 4. CUARTO: Handler para mensajes normales
     application.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND,
         handle_message
     ))
     
-    # TRIGÉSIMO: Handlers de archivos
+    # 🚨 5. QUINTO: Handlers de archivos
     application.add_handler(MessageHandler(filters.PHOTO, handle_image))
     application.add_handler(MessageHandler(filters.Document.IMAGE, handle_image))
     application.add_handler(MessageHandler(filters.Document.ALL, handle_all_documents))
     
-    # ⚠️ IMPORTANTE: ELIMINAR JOB DE INCREMENTO AUTOMÁTICO
-    # ❌ NO configurar job_queue - El admin controla manualmente
-    print("✅ Sistema configurado - Contadores individuales por usuario")
-    print("✅ Admin controla manualmente los avances")
-    
     # ✅ Manejo de errores
     application.add_error_handler(error_handler)
+    
     
     print("✅ BOT CONFIGURADO CORRECTAMENTE CON SISTEMA INDIVIDUAL")
     
@@ -5624,4 +5594,5 @@ if __name__ == "__main__":
     # Ejecutar el bot en el HILO PRINCIPAL (esto es crucial)
     print("🤖 Iniciando bot en hilo principal...")
     main()
+
 
