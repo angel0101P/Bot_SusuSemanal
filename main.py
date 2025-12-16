@@ -236,12 +236,45 @@ def init_db():
             WHERE NOT EXISTS (SELECT 1 FROM config_pagos)
         ''')
         
-        conn.commit()
+ # ✅ NUEVA: Verificar y agregar columna 'fecha_configuracion' en planes_pago
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT fecha_configuracion FROM planes_pago LIMIT 1")
         conn.close()
-
-        reparar_tablas()
-        
-        print("✅ Base de datos inicializada con semanas individuales")
+        print("✅ Columna 'fecha_configuracion' existe")
+    except Exception:
+        print("⚠️ Agregando columna 'fecha_configuracion'...")
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("ALTER TABLE planes_pago ADD COLUMN fecha_configuracion TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+            conn.commit()
+            conn.close()
+            print("✅ Columna 'fecha_configuracion' agregada")
+        except Exception as e:
+            print(f"❌ Error al agregar 'fecha_configuracion': {e}")
+    
+    # ✅ NUEVA: Verificar y agregar columna 'semanas_default' en config_pagos
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT semanas_default FROM config_pagos LIMIT 1")
+        conn.close()
+        print("✅ Columna 'semanas_default' existe")
+    except Exception:
+        print("⚠️ Agregando columna 'semanas_default'...")
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("ALTER TABLE config_pagos ADD COLUMN semanas_default INT DEFAULT 10")
+            conn.commit()
+            conn.close()
+            print("✅ Columna 'semanas_default' agregada")
+        except Exception as e:
+            print(f"❌ Error al agregar 'semanas_default': {e}")
+    
+    print("🎉 Verificación de columnas completada")
         
     except Exception as e:
         print(f"❌ Error al inicializar BD: {e}")
@@ -2461,21 +2494,36 @@ async def ver_asignaciones(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mensaje += f"🔢 **Semanas configuradas:** {semanas_config}"
     
     await update.message.reply_text(mensaje)
-
+    
 async def mis_planes_mejorado(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Ver planes de pago activos del usuario con contador individual"""
     user_id = update.effective_user.id
     
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("""
-        SELECT id, productos_json, total, semanas, pago_semanal, 
-               semanas_completadas, fecha_inicio, contador_pausado,
-               fecha_ultimo_pago, fecha_configuracion
-        FROM planes_pago 
-        WHERE user_id = %s AND estado = 'activo'
-        ORDER BY fecha_inicio DESC
-    """, (user_id,))
+    
+    # Primero verificar si la columna existe
+    try:
+        cursor.execute("""
+            SELECT id, productos_json, total, semanas, pago_semanal, 
+                   semanas_completadas, fecha_inicio, contador_pausado,
+                   fecha_ultimo_pago, fecha_configuracion
+            FROM planes_pago 
+            WHERE user_id = %s AND estado = 'activo'
+            ORDER BY fecha_inicio DESC
+        """, (user_id,))
+    except Exception as e:
+        # Si falla, usar consulta sin fecha_configuracion
+        print(f"⚠️ Columna fecha_configuracion no existe, usando consulta alternativa: {e}")
+        cursor.execute("""
+            SELECT id, productos_json, total, semanas, pago_semanal, 
+                   semanas_completadas, fecha_inicio, contador_pausado,
+                   fecha_ultimo_pago
+            FROM planes_pago 
+            WHERE user_id = %s AND estado = 'activo'
+            ORDER BY fecha_inicio DESC
+        """, (user_id,))
+    
     planes = cursor.fetchall()
     
     if not planes:
@@ -2569,13 +2617,17 @@ async def catalogo_solo_lectura(update: Update, context: ContextTypes.DEFAULT_TY
     """)
     productos = cursor.fetchall()
     
-    # Obtener configuración de semanas
-    cursor.execute("SELECT semanas_default FROM config_pagos LIMIT 1")
-    config = cursor.fetchone()
-    conn.close()
-    
-    semanas = config[0] if config else 10
-    
+    # Obtener configuración de semanas POR DEFECTO
+    try:
+        cursor.execute("SELECT semanas_default FROM config_pagos LIMIT 1")
+        config = cursor.fetchone()
+        conn.close()
+        semanas = config[0] if config else 10
+    except Exception:
+        # Si la columna no existe, usar valor por defecto
+        conn.close()
+        semanas = 10
+        print("⚠️ Usando semanas por defecto: 10 (columna semanas_default no existe)")
     if not productos:
         await update.message.reply_text("📭 El catálogo está vacío por ahora")
         return
@@ -4060,7 +4112,8 @@ async def configurar_semanas_busqueda(update: Update, context: ContextTypes.DEFA
             "Verifica que el usuario tenga un plan activo asignado."
         )
         return
-    
+        
+        
     if len(usuarios) == 1:
         # Si hay solo un resultado, mostrar opciones de configuración
         user_id, first_name, last_name, semanas, semanas_comp, pago_semanal, total = usuarios[0]
@@ -5388,6 +5441,45 @@ async def aplicar_configuracion_semanas_directa(update, context, user_id, nuevas
         print(f"❌ Error en configuración personalizada: {e}")
         await update.message.reply_text("❌ Error al aplicar configuración")
 
+
+
+
+async def mostrar_opciones_semanas(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int, first_name: str, last_name: str, semanas: int, semanas_comp: int, total: float):
+    """Mostrar opciones de configuración de semanas para un usuario"""
+    nombre_completo = f"{first_name or ''} {last_name or ''}".strip()
+    pago_actual = total / semanas if semanas > 0 else 0
+    
+    # Crear teclado con opciones
+    keyboard = [
+        [InlineKeyboardButton("🔄 4 Semanas", callback_data=f"config_semanas_{user_id}_4"),
+         InlineKeyboardButton("🔄 8 Semanas", callback_data=f"config_semanas_{user_id}_8")],
+        [InlineKeyboardButton("🔄 12 Semanas", callback_data=f"config_semanas_{user_id}_12"),
+         InlineKeyboardButton("🔄 16 Semanas", callback_data=f"config_semanas_{user_id}_16")],
+        [InlineKeyboardButton("🔄 20 Semanas", callback_data=f"config_semanas_{user_id}_20"),
+         InlineKeyboardButton("✏️ Personalizado", callback_data=f"config_personalizado_{user_id}")],
+        [InlineKeyboardButton("❌ Cancelar", callback_data=f"cancelar_config_{user_id}")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    mensaje = f"⚙️ **CONFIGURAR SEMANAS PARA USUARIO**\n\n"
+    mensaje += f"👤 **Usuario:** {nombre_completo}\n"
+    mensaje += f"🆔 **ID:** {user_id}\n\n"
+    mensaje += f"📊 **CONFIGURACIÓN ACTUAL:**\n"
+    mensaje += f"• 📅 Semanas totales: {semanas}\n"
+    mensaje += f"• 📈 Semanas completadas: {semanas_comp}\n"
+    mensaje += f"• 💰 Pago semanal: ${pago_actual:.2f}\n"
+    mensaje += f"• 💵 Total del plan: ${total:.2f}\n\n"
+    mensaje += f"📋 **SELECCIONA NUEVAS SEMANAS:**\n"
+    mensaje += f"(El pago semanal se recalculará automáticamente)"
+    
+    # Si es un mensaje de callback, usar edit_message_text
+    if update.callback_query:
+        await update.callback_query.edit_message_text(mensaje, reply_markup=reply_markup)
+    else:
+        await update.message.reply_text(mensaje, reply_markup=reply_markup)
+
+
+
 # =============================================
 # FUNCIÓN MAIN
 # =============================================
@@ -5594,5 +5686,6 @@ if __name__ == "__main__":
     # Ejecutar el bot en el HILO PRINCIPAL (esto es crucial)
     print("🤖 Iniciando bot en hilo principal...")
     main()
+
 
 
