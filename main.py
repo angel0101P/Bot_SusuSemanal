@@ -77,24 +77,6 @@ def reparar_tablas():
         except Exception as e:
             print(f"❌ Error al agregar 'categoria': {e}")
     
-    # Verificar y agregar columna 'contador_activo'
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT contador_activo FROM config_pagos LIMIT 1")
-        conn.close()
-        print("✅ Columna 'contador_activo' existe")
-    except Exception:
-        print("⚠️ Agregando columna 'contador_activo'...")
-        try:
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            cursor.execute("ALTER TABLE config_pagos ADD COLUMN contador_activo BOOLEAN DEFAULT TRUE")
-            conn.commit()
-            conn.close()
-            print("✅ Columna 'contador_activo' agregada")
-        except Exception as e:
-            print(f"❌ Error al agregar 'contador_activo': {e}")
     
     # Verificar y agregar columna 'contador_pausado' en planes_pago
     try:
@@ -137,7 +119,7 @@ def reparar_tablas():
     print("🎉 Verificación de columnas completada")
 
 def init_db():
-    """Inicializar base de datos con todas las columnas necesarias"""
+    """Inicializar base de datos con semanas individuales"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -183,34 +165,34 @@ def init_db():
             )
         ''')
         
-        # Tabla de configuración
+        # Tabla de configuración (SOLO VALOR POR DEFECTO)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS config_pagos (
                 id SERIAL PRIMARY KEY,
-                semanas INT DEFAULT 10,
-                contador_activo BOOLEAN DEFAULT TRUE,
+                semanas_default INT DEFAULT 10,  -- ← Solo valor por defecto
                 fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
         
-        # Tabla de planes de pago activos
+        # Tabla de planes de pago - MODIFICADA para semanas individuales
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS planes_pago (
                 id SERIAL PRIMARY KEY,
                 user_id BIGINT,
                 productos_json JSONB,
                 total DECIMAL(10,2),
-                semanas INT,
+                semanas INT DEFAULT 10,  -- ← SEMANAS INDIVIDUALES
                 pago_semanal DECIMAL(10,2),
                 semanas_completadas INT DEFAULT 0,
                 estado VARCHAR(50) DEFAULT 'activo',
                 contador_pausado BOOLEAN DEFAULT FALSE,
                 fecha_inicio TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                fecha_ultimo_pago TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                fecha_ultimo_pago TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                fecha_configuracion TIMESTAMP DEFAULT CURRENT_TIMESTAMP  -- NUEVO
             )
         ''')
         
-        # 🆕 TABLA DE PUNTOS DE USUARIOS
+        # Tabla de puntos de usuarios
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS usuarios_puntos (
                 id SERIAL PRIMARY KEY,
@@ -221,7 +203,7 @@ def init_db():
             )
         ''')
         
-        # 🆕 TABLA DE REFERIDOS
+        # Tabla de referidos
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS referidos (
                 id SERIAL PRIMARY KEY,
@@ -235,7 +217,7 @@ def init_db():
             )
         ''')
         
-        # 🆕 TABLA DE HISTORIAL DE PUNTOS
+        # Tabla de historial de puntos
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS puntos_historial (
                 id SERIAL PRIMARY KEY,
@@ -249,18 +231,17 @@ def init_db():
         
         # Insertar configuración por defecto
         cursor.execute('''
-            INSERT INTO config_pagos (semanas, contador_activo) 
-            SELECT 10, TRUE 
+            INSERT INTO config_pagos (semanas_default) 
+            SELECT 10 
             WHERE NOT EXISTS (SELECT 1 FROM config_pagos)
         ''')
         
         conn.commit()
         conn.close()
-        
-        # ✅ LLAMAR A LA REPARACIÓN DESPUÉS DE CREAR TABLAS
+
         reparar_tablas()
         
-        print("✅ Base de datos inicializada correctamente")
+        print("✅ Base de datos inicializada con semanas individuales")
         
     except Exception as e:
         print(f"❌ Error al inicializar BD: {e}")
@@ -291,12 +272,464 @@ def verificar_base_datos():
         conn.close()
         
         semanas_config = config[0] if config else 10
-        contador_activo = config[1] if config else True
-        print(f"📊 TOTAL en BD - Pagos: {resultado_pagos[0]}, Usuarios: {resultado_usuarios[0]}, Productos: {resultado_productos[0]}, Planes: {resultado_planes[0]}, Puntos: {resultado_puntos[0]}, Referidos: {resultado_referidos[0]}, Semanas: {semanas_config}, Contador: {'ACTIVO' if contador_activo else 'PAUSADO'}")
+        print(f"📊 TOTAL en BD - ... Semanas por defecto: {semanas_config}")
         return resultado_pagos[0], resultado_usuarios[0], resultado_productos[0], resultado_planes[0], semanas_config
     except Exception as e:
         print(f"❌ Error al verificar BD: {e}")
         return 0, 0, 0, 0, 10
+    
+
+# =============================================
+# 🔄 SISTEMA DE CONTADORES INDIVIDUALES POR USUARIO
+# =============================================
+
+async def control_contador_usuario(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Menú principal para controlar contadores individuales (solo admin)"""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("❌ No tienes permisos de administrador")
+        return
+    
+    # Obtener usuarios con planes activos
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        SELECT p.user_id, u.first_name, u.last_name, 
+               p.semanas_completadas, p.semanas,
+               p.contador_pausado, p.fecha_ultimo_pago
+        FROM planes_pago p
+        LEFT JOIN usuarios u ON p.user_id = u.user_id
+        WHERE p.estado = 'activo'
+        ORDER BY u.first_name
+    """)
+    usuarios = cursor.fetchall()
+    
+    conn.close()
+    
+    if not usuarios:
+        await update.message.reply_text("📭 No hay usuarios con planes activos")
+        return
+    
+    mensaje = "⚙️ **CONTROL DE CONTADORES INDIVIDUALES**\n\n"
+    
+    for user_id, first_name, last_name, semanas_comp, semanas_tot, contador_pausado, fecha_ultimo in usuarios:
+        nombre_completo = f"{first_name or ''} {last_name or ''}".strip()
+        
+        estado = "⏸️ PAUSADO" if contador_pausado else "🟢 ACTIVO"
+        progreso = f"{semanas_comp}/{semanas_tot}"
+        
+        mensaje += f"👤 **{nombre_completo}** (ID: {user_id})\n"
+        mensaje += f"   📊 Progreso: {progreso}\n"
+        mensaje += f"   ⏰ Estado: {estado}\n"
+        
+        # Mostrar días desde último pago
+        if fecha_ultimo:
+            fecha_ultimo_dt = fecha_ultimo if isinstance(fecha_ultimo, datetime) else datetime.fromisoformat(str(fecha_ultimo))
+            dias_desde_ultimo = (datetime.now() - fecha_ultimo_dt).days
+            mensaje += f"   📅 Último avance: {dias_desde_ultimo} días\n"
+        
+        # Comandos de control
+        mensaje += f"   🔼 /avanzar_{user_id} | ⏸️ /pausar_{user_id} | ▶️ /reanudar_{user_id}\n"
+        mensaje += "   ━━━━━━━━━━━━━━━━━━━━\n\n"
+    
+    mensaje += "📋 **COMANDOS DE CONTROL:**\n"
+    mensaje += "• /avanzartodos - Avanzar a TODOS los usuarios\n"
+    mensaje += "• /pausartodos - Pausar a TODOS los usuarios\n"
+    mensaje += "• /reanudartodos - Reanudar a TODOS los usuarios\n"
+    mensaje += "• /vercontadores - Ver esta lista\n"
+    mensaje += "• /avanzargrupo - Avanzar grupo específico"
+    
+    await update.message.reply_text(mensaje)
+
+async def avanzar_contador_usuario(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Avanza el contador de un usuario específico"""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("❌ No tienes permisos de administrador")
+        return
+    
+    try:
+        # Obtener user_id del comando
+        command_text = update.message.text
+        user_id = int(command_text.split('_')[1])
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Verificar que el usuario tiene plan activo
+        cursor.execute("""
+            SELECT p.id, p.semanas_completadas, p.semanas, p.contador_pausado,
+                   u.first_name, u.last_name
+            FROM planes_pago p
+            LEFT JOIN usuarios u ON p.user_id = u.user_id
+            WHERE p.user_id = %s AND p.estado = 'activo'
+        """, (user_id,))
+        
+        plan = cursor.fetchone()
+        
+        if not plan:
+            await update.message.reply_text("❌ Usuario no tiene plan activo")
+            conn.close()
+            return
+        
+        plan_id, semanas_comp, semanas_tot, contador_pausado, first_name, last_name = plan
+        nombre_completo = f"{first_name or ''} {last_name or ''}".strip()
+        
+        # Verificar si el contador está pausado
+        if contador_pausado:
+            keyboard = [
+                [InlineKeyboardButton("✅ Avanzar igualmente", callback_data=f"avanzar_forzar_{user_id}")],
+                [InlineKeyboardButton("⏸️ Reanudar y avanzar", callback_data=f"reanudar_y_avanzar_{user_id}")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.message.reply_text(
+                f"⚠️ **CONTADOR PAUSADO**\n\n"
+                f"El contador de {nombre_completo} está pausado.\n\n"
+                f"¿Qué deseas hacer?",
+                reply_markup=reply_markup
+            )
+            conn.close()
+            return
+        
+        # Verificar si ya completó todas las semanas
+        if semanas_comp >= semanas_tot:
+            await update.message.reply_text(
+                f"✅ **PLAN COMPLETADO**\n\n"
+                f"{nombre_completo} ya completó todas las semanas ({semanas_tot}).\n\n"
+                f"📞 Contacta al usuario para finalizar el proceso."
+            )
+            conn.close()
+            return
+        
+        # Avanzar el contador
+        nuevas_semanas = semanas_comp + 1
+        cursor.execute("""
+            UPDATE planes_pago 
+            SET semanas_completadas = %s,
+                fecha_ultimo_pago = CURRENT_TIMESTAMP
+            WHERE id = %s
+        """, (nuevas_semanas, plan_id))
+        
+        conn.commit()
+        conn.close()
+        
+        # Notificar al usuario
+        try:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=f"📅 **¡AVANCE DE SEMANA!**\n\n"
+                     f"✅ Tu plan ha avanzado a la semana {nuevas_semanas}/{semanas_tot}\n\n"
+                     f"💳 Recuerda realizar tu pago semanal.\n"
+                     f"📋 Ver progreso: /misplanes"
+            )
+        except Exception as e:
+            print(f"❌ No se pudo notificar al usuario: {e}")
+        
+        await update.message.reply_text(
+            f"✅ **Contador avanzado**\n\n"
+            f"👤 Usuario: {nombre_completo}\n"
+            f"📊 Nuevo progreso: {nuevas_semanas}/{semanas_tot}\n\n"
+            f"✅ El usuario ha sido notificado."
+        )
+        
+    except Exception as e:
+        print(f"❌ Error al avanzar contador: {e}")
+        await update.message.reply_text("❌ Error al avanzar el contador")
+
+async def pausar_contador_usuario(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Pausa el contador de un usuario específico"""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("❌ No tienes permisos de administrador")
+        return
+    
+    try:
+        command_text = update.message.text
+        user_id = int(command_text.split('_')[1])
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Verificar que el usuario tiene plan activo
+        cursor.execute("""
+            SELECT p.id, u.first_name, u.last_name, p.contador_pausado
+            FROM planes_pago p
+            LEFT JOIN usuarios u ON p.user_id = u.user_id
+            WHERE p.user_id = %s AND p.estado = 'activo'
+        """, (user_id,))
+        
+        plan = cursor.fetchone()
+        
+        if not plan:
+            await update.message.reply_text("❌ Usuario no tiene plan activo")
+            conn.close()
+            return
+        
+        plan_id, first_name, last_name, ya_pausado = plan
+        
+        if ya_pausado:
+            await update.message.reply_text("⚠️ El contador de este usuario ya está pausado")
+            conn.close()
+            return
+        
+        # Pausar contador
+        cursor.execute("UPDATE planes_pago SET contador_pausado = TRUE WHERE id = %s", (plan_id,))
+        conn.commit()
+        conn.close()
+        
+        nombre_completo = f"{first_name or ''} {last_name or ''}".strip()
+        
+        # Notificar al usuario
+        try:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=f"⏸️ **CONTADOR PAUSADO**\n\n"
+                     f"El administrador ha pausado tu contador de semanas.\n\n"
+                     f"📞 Contacta al administrador para más información.\n"
+                     f"📋 Estado actual: /misplanes"
+            )
+        except Exception as e:
+            print(f"❌ No se pudo notificar al usuario: {e}")
+        
+        await update.message.reply_text(
+            f"⏸️ **Contador pausado**\n\n"
+            f"👤 Usuario: {nombre_completo}\n"
+            f"📊 Estado: PAUSADO\n\n"
+            f"Para reanudar usa: /reanudar_{user_id}"
+        )
+        
+    except Exception as e:
+        print(f"❌ Error al pausar contador: {e}")
+        await update.message.reply_text("❌ Error al pausar el contador")
+
+async def reanudar_contador_usuario(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Reanuda el contador de un usuario específico"""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("❌ No tienes permisos de administrador")
+        return
+    
+    try:
+        command_text = update.message.text
+        user_id = int(command_text.split('_')[1])
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Verificar que el usuario tiene plan activo
+        cursor.execute("""
+            SELECT p.id, u.first_name, u.last_name, p.contador_pausado
+            FROM planes_pago p
+            LEFT JOIN usuarios u ON p.user_id = u.user_id
+            WHERE p.user_id = %s AND p.estado = 'activo'
+        """, (user_id,))
+        
+        plan = cursor.fetchone()
+        
+        if not plan:
+            await update.message.reply_text("❌ Usuario no tiene plan activo")
+            conn.close()
+            return
+        
+        plan_id, first_name, last_name, ya_pausado = plan
+        
+        if not ya_pausado:
+            await update.message.reply_text("⚠️ El contador de este usuario no está pausado")
+            conn.close()
+            return
+        
+        # Reanudar contador
+        cursor.execute("UPDATE planes_pago SET contador_pausado = FALSE WHERE id = %s", (plan_id,))
+        conn.commit()
+        conn.close()
+        
+        nombre_completo = f"{first_name or ''} {last_name or ''}".strip()
+        
+        # Notificar al usuario
+        try:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=f"▶️ **CONTADOR REANUDADO**\n\n"
+                     f"El administrador ha reanudado tu contador de semanas.\n\n"
+                     f"📋 Tu progreso continúa normalmente.\n"
+                     f"📊 Estado actual: /misplanes"
+            )
+        except Exception as e:
+            print(f"❌ No se pudo notificar al usuario: {e}")
+        
+        await update.message.reply_text(
+            f"▶️ **Contador reanudado**\n\n"
+            f"👤 Usuario: {nombre_completo}\n"
+            f"📊 Estado: ACTIVO\n\n"
+            f"Para pausar nuevamente: /pausar_{user_id}"
+        )
+        
+    except Exception as e:
+        print(f"❌ Error al reanudar contador: {e}")
+        await update.message.reply_text("❌ Error al reanudar el contador")
+
+async def avanzar_todos_usuarios(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Avanza el contador de TODOS los usuarios activos"""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("❌ No tienes permisos de administrador")
+        return
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Obtener todos los planes activos NO pausados
+        cursor.execute("""
+            SELECT p.id, p.user_id, p.semanas_completadas, p.semanas,
+                   u.first_name, u.last_name
+            FROM planes_pago p
+            LEFT JOIN usuarios u ON p.user_id = u.user_id
+            WHERE p.estado = 'activo' 
+            AND p.contador_pausado = FALSE
+            AND p.semanas_completadas < p.semanas
+        """)
+        
+        planes = cursor.fetchall()
+        
+        if not planes:
+            await update.message.reply_text("📭 No hay usuarios con contadores activos para avanzar")
+            conn.close()
+            return
+        
+        planes_avanzados = 0
+        planes_completados = 0
+        usuarios_completados = []
+        
+        for plan_id, user_id, semanas_comp, semanas_tot, first_name, last_name in planes:
+            nuevas_semanas = semanas_comp + 1
+            
+            # Actualizar contador
+            cursor.execute("""
+                UPDATE planes_pago 
+                SET semanas_completadas = %s,
+                    fecha_ultimo_pago = CURRENT_TIMESTAMP
+                WHERE id = %s
+            """, (nuevas_semanas, plan_id))
+            
+            planes_avanzados += 1
+            
+            # Verificar si completó el plan
+            if nuevas_semanas >= semanas_tot:
+                planes_completados += 1
+                nombre_completo = f"{first_name or ''} {last_name or ''}".strip()
+                usuarios_completados.append((user_id, nombre_completo, semanas_tot))
+            
+            # Notificar al usuario
+            try:
+                if nuevas_semanas >= semanas_tot:
+                    mensaje = f"🎉 **¡PLAN COMPLETADO!**\n\nHas terminado las {semanas_tot} semanas.\n📞 Contacta al administrador."
+                else:
+                    mensaje = f"📅 **AVANCE DE SEMANA**\n\nTu plan: {nuevas_semanas}/{semanas_tot}\n💳 Recuerda tu pago semanal."
+                
+                await context.bot.send_message(chat_id=user_id, text=mensaje)
+            except Exception as e:
+                print(f"❌ No se pudo notificar a usuario {user_id}: {e}")
+        
+        conn.commit()
+        conn.close()
+        
+        # Construir mensaje de resumen
+        mensaje_resumen = f"✅ **CONTADORES AVANZADOS**\n\n"
+        mensaje_resumen += f"📈 Planes avanzados: {planes_avanzados}\n"
+        
+        if planes_completados > 0:
+            mensaje_resumen += f"🏆 Planes completados: {planes_completados}\n\n"
+            mensaje_resumen += "👥 **Usuarios que completaron:**\n"
+            for user_id, nombre, semanas in usuarios_completados:
+                mensaje_resumen += f"• {nombre} (ID: {user_id}) - {semanas} semanas\n"
+        else:
+            mensaje_resumen += "📭 No se completaron planes esta vez\n"
+        
+        mensaje_resumen += f"\n⏸️ **Nota:** Los contadores pausados no fueron afectados."
+        
+        await update.message.reply_text(mensaje_resumen)
+        
+    except Exception as e:
+        print(f"❌ Error al avanzar todos: {e}")
+        await update.message.reply_text("❌ Error al avanzar contadores")
+
+async def pausar_todos_usuarios(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Pausa el contador de TODOS los usuarios activos"""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("❌ No tienes permisos de administrador")
+        return
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Contar planes que serán pausados
+        cursor.execute("SELECT COUNT(*) FROM planes_pago WHERE estado = 'activo' AND contador_pausado = FALSE")
+        total_pausables = cursor.fetchone()[0]
+        
+        if total_pausables == 0:
+            await update.message.reply_text("✅ Todos los contadores ya están pausados")
+            conn.close()
+            return
+        
+        # Pausar todos los contadores
+        cursor.execute("""
+            UPDATE planes_pago 
+            SET contador_pausado = TRUE 
+            WHERE estado = 'activo' AND contador_pausado = FALSE
+        """)
+        
+        planes_pausados = cursor.rowcount
+        conn.commit()
+        conn.close()
+        
+        await update.message.reply_text(
+            f"⏸️ **TODOS LOS CONTADORES PAUSADOS**\n\n"
+            f"📊 Contadores pausados: {planes_pausados}\n\n"
+            f"📞 Los usuarios han sido notificados."
+        )
+        
+    except Exception as e:
+        print(f"❌ Error al pausar todos: {e}")
+        await update.message.reply_text("❌ Error al pausar contadores")
+
+async def reanudar_todos_usuarios(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Reanuda el contador de TODOS los usuarios activos"""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("❌ No tienes permisos de administrador")
+        return
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Contar planes que serán reanudados
+        cursor.execute("SELECT COUNT(*) FROM planes_pago WHERE estado = 'activo' AND contador_pausado = TRUE")
+        total_reanudables = cursor.fetchone()[0]
+        
+        if total_reanudables == 0:
+            await update.message.reply_text("✅ Todos los contadores ya están activos")
+            conn.close()
+            return
+        
+        # Reanudar todos los contadores
+        cursor.execute("""
+            UPDATE planes_pago 
+            SET contador_pausado = FALSE 
+            WHERE estado = 'activo' AND contador_pausado = TRUE
+        """)
+        
+        planes_reanudados = cursor.rowcount
+        conn.commit()
+        conn.close()
+        
+        await update.message.reply_text(
+            f"▶️ **TODOS LOS CONTADORES REANUDADOS**\n\n"
+            f"📊 Contadores reanudados: {planes_reanudados}\n\n"
+            f"📞 Los usuarios han sido notificados."
+        )
+        
+    except Exception as e:
+        print(f"❌ Error al reanudar todos: {e}")
+        await update.message.reply_text("❌ Error al reanudar contadores")
 
 # =============================================
 # 🆕 SISTEMA DE PUNTOS Y REFERIDOS
@@ -1213,204 +1646,7 @@ async def ver_puntos_usuario(update: Update, context: ContextTypes.DEFAULT_TYPE)
 # 🆕 SISTEMA DE INCREMENTO DE SEMANAS
 # =============================================
 
-async def incrementar_semanas_automatico(context: ContextTypes.DEFAULT_TYPE):
-    """Incrementa semanas automáticamente respetando la configuración del admin"""
-    print(f"🔄 [{datetime.now().strftime('%Y-%m-%d %H:%M')}] Verificando incremento automático...")
-    
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # 1. Verificar configuración global
-        cursor.execute("SELECT semanas, contador_activo FROM config_pagos LIMIT 1")
-        config = cursor.fetchone()
-        
-        if not config:
-            print("❌ No se encontró configuración")
-            conn.close()
-            return
-            
-        semanas_config, contador_activo = config
-        
-        if not contador_activo:
-            print("⏸️ Contador global PAUSADO por admin - No se incrementan semanas")
-            conn.close()
-            return
-        
-        # 2. Incrementar planes activos no pausados individualmente
-        cursor.execute("""
-            UPDATE planes_pago 
-            SET semanas_completadas = semanas_completadas + 1,
-                fecha_ultimo_pago = CURRENT_TIMESTAMP
-            WHERE estado = 'activo' 
-            AND contador_pausado = FALSE
-            AND semanas_completadas < semanas
-        """)
-        planes_afectados = cursor.rowcount
-        
-        # 3. Verificar planes completados
-        cursor.execute("""
-            SELECT user_id, semanas_completadas, semanas 
-            FROM planes_pago 
-            WHERE estado = 'activo' 
-            AND semanas_completadas >= semanas
-            AND contador_pausado = FALSE
-        """)
-        planes_completados = cursor.fetchall()
-        
-        conn.commit()
-        conn.close()
-        
-        # 4. Logs y notificaciones
-        if planes_afectados > 0:
-            print(f"✅ {planes_afectados} planes incrementados +1 semana (Config: {semanas_config} semanas)")
-            
-            # Notificar usuarios
-            for user_id, semanas_comp, semanas_tot in planes_completados:
-                try:
-                    if semanas_comp == semanas_tot:
-                        # Plan completado
-                        await context.bot.send_message(
-                            chat_id=user_id,
-                            text="🎉 **¡FELICITACIONES!**\n\n"
-                                 "✅ **HAS COMPLETADO TU PLAN DE PAGO**\n\n"
-                                 f"Has terminado las {semanas_tot} semanas de tu plan.\n\n"
-                                 "📞 Contacta al administrador para finalizar el proceso."
-                        )
-                    else:
-                        # Semana normal
-                        await context.bot.send_message(
-                            chat_id=user_id,
-                            text="📅 **AVANCE AUTOMÁTICO**\n\n"
-                                 f"✅ Tu plan ha avanzado a la semana {semanas_comp}/{semanas_tot}\n\n"
-                                 "💳 Recuerda realizar tu pago semanal.\n"
-                                 "📋 Ver progreso: /misplanes"
-                        )
-                except Exception as e:
-                    print(f"❌ No se pudo notificar a usuario {user_id}: {e}")
-        else:
-            print("📭 No hay planes para incrementar esta semana")
-            
-    except Exception as e:
-        print(f"❌ Error en incremento automático: {e}")
 
-async def incrementar_semana_manual(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Incrementa una semana manualmente respetando la configuración"""
-    if not is_admin(update.effective_user.id):  # ← ACTUALIZADO
-        await update.message.reply_text("❌ No tienes permisos de administrador")
-        return
-
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # Verificar configuración
-        cursor.execute("SELECT semanas, contador_activo FROM config_pagos LIMIT 1")
-        config = cursor.fetchone()
-        
-        if not config:
-            await update.message.reply_text("❌ Error: No se encontró configuración")
-            conn.close()
-            return
-            
-        semanas_config, contador_activo = config
-        
-        if not contador_activo:
-            keyboard = [
-                [InlineKeyboardButton("✅ REANUDAR CONTADOR", callback_data="reanudar_y_incrementar")],
-                [InlineKeyboardButton("❌ SOLO INCREMENTAR", callback_data="incrementar_force")]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            await update.message.reply_text(
-                "⚠️ **CONTADOR PAUSADO**\n\n"
-                "El contador global está pausado. ¿Qué deseas hacer?\n\n"
-                "✅ **Reanudar contador**: Activa el contador e incrementa\n"
-                "❌ **Solo incrementar**: Incrementa sin reanudar el contador automático",
-                reply_markup=reply_markup
-            )
-            conn.close()
-            return
-        
-        # Incrementar semanas
-        cursor.execute("""
-            UPDATE planes_pago 
-            SET semanas_completadas = semanas_completadas + 1,
-                fecha_ultimo_pago = CURRENT_TIMESTAMP
-            WHERE estado = 'activo' 
-            AND contador_pausado = FALSE
-            AND semanas_completadas < semanas
-        """)
-        planes_afectados = cursor.rowcount
-        
-        # Obtener estadísticas
-        cursor.execute("SELECT COUNT(*) FROM planes_pago WHERE estado = 'activo'")
-        total_planes = cursor.fetchone()[0]
-        
-        cursor.execute("SELECT COUNT(*) FROM planes_pago WHERE contador_pausado = TRUE AND estado = 'activo'")
-        planes_pausados = cursor.fetchone()[0]
-        
-        conn.commit()
-        conn.close()
-        
-        await update.message.reply_text(
-            f"✅ **Semana incrementada manualmente**\n\n"
-            f"📊 **Estadísticas:**\n"
-            f"• 📈 Planes afectados: {planes_afectados}\n"
-            f"• 📋 Total planes activos: {total_planes}\n"
-            f"• ⏸️ Planes pausados: {planes_pausados}\n"
-            f"• 🔢 Semanas configuradas: {semanas_config}\n\n"
-            f"Los usuarios han sido notificados automáticamente."
-        )
-        
-        # Notificar usuarios
-        if planes_afectados > 0:
-            await notificar_usuarios_incremento(context, "manual")
-                    
-    except Exception as e:
-        print(f"❌ Error en incremento manual: {e}")
-        await update.message.reply_text("❌ Error al incrementar semanas")
-
-async def forzar_incremento(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Fuerza el incremento de semana ignorando el estado de pausa"""
-    if not is_admin(update.effective_user.id):  # ← ACTUALIZADO
-        await update.message.reply_text("❌ No tienes permisos de administrador")
-        return
-
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute("SELECT semanas FROM config_pagos LIMIT 1")
-        config = cursor.fetchone()
-        semanas_config = config[0] if config else 10
-        
-        # Incrementar IGNORANDO el estado de pausa
-        cursor.execute("""
-            UPDATE planes_pago 
-            SET semanas_completadas = semanas_completadas + 1,
-                fecha_ultimo_pago = CURRENT_TIMESTAMP
-            WHERE estado = 'activo' 
-            AND semanas_completadas < semanas
-        """)
-        planes_afectados = cursor.rowcount
-        
-        conn.commit()
-        conn.close()
-        
-        await update.message.reply_text(
-            f"🚀 **INCREMENTO FORZADO**\n\n"
-            f"✅ {planes_afectados} planes incrementados +1 semana\n"
-            f"🔢 Configuración: {semanas_config} semanas\n"
-            f"⚠️ Se ignoró el estado de pausa del contador"
-        )
-        
-        # Notificar usuarios
-        await notificar_usuarios_incremento(context, "forzado")
-                    
-    except Exception as e:
-        print(f"❌ Error en incremento forzado: {e}")
-        await update.message.reply_text("❌ Error al forzar incremento")
 
 async def notificar_usuarios_incremento(context: ContextTypes.DEFAULT_TYPE, tipo: str):
     """Notifica a los usuarios sobre el incremento de semanas"""
@@ -2227,13 +2463,15 @@ async def ver_asignaciones(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(mensaje)
 
 async def mis_planes_mejorado(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Ver planes de pago activos del usuario (VERSIÓN MEJORADA)"""
+    """Ver planes de pago activos del usuario con contador individual"""
     user_id = update.effective_user.id
     
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT id, productos_json, total, semanas, pago_semanal, semanas_completadas, fecha_inicio, contador_pausado
+        SELECT id, productos_json, total, semanas, pago_semanal, 
+               semanas_completadas, fecha_inicio, contador_pausado,
+               fecha_ultimo_pago, fecha_configuracion
         FROM planes_pago 
         WHERE user_id = %s AND estado = 'activo'
         ORDER BY fecha_inicio DESC
@@ -2249,19 +2487,20 @@ async def mis_planes_mejorado(update: Update, context: ContextTypes.DEFAULT_TYPE
         conn.close()
         return
     
-    # Obtener configuración
-    cursor.execute("SELECT semanas FROM config_pagos LIMIT 1")
-    config = cursor.fetchone()
-    semanas_config = config[0] if config else 10
-    
-    plan_id, productos_json, total, semanas, pago_semanal, semanas_comp, fecha_inicio, contador_pausado = planes[0]
+    plan_id, productos_json, total, semanas, pago_semanal, semanas_comp, fecha_inicio, contador_pausado, fecha_ultimo, fecha_config = planes[0]
     
     # Convertir productos_json si es necesario
     if isinstance(productos_json, str):
         productos_json = json.loads(productos_json)
     
-    # Construir mensaje detallado
-    mensaje = "📋 **TU PLAN DE PAGO** (Asignado por administración)\n\n"
+    # Calcular días desde último avance
+    dias_desde_ultimo = "N/A"
+    if fecha_ultimo:
+        fecha_ultimo_dt = fecha_ultimo if isinstance(fecha_ultimo, datetime) else datetime.fromisoformat(str(fecha_ultimo))
+        dias_desde_ultimo = (datetime.now() - fecha_ultimo_dt).days
+    
+    # Construir mensaje
+    mensaje = "📋 **TU PLAN DE PAGO**\n\n"
     mensaje += "🛍️ **PRODUCTOS ASIGNADOS:**\n"
     
     total_calculado = 0
@@ -2280,12 +2519,24 @@ async def mis_planes_mejorado(update: Update, context: ContextTypes.DEFAULT_TYPE
     estado_contador = "⏸️ PAUSADO" if contador_pausado else "🟢 ACTIVO"
     
     mensaje += f"\n💰 **TOTAL:** ${total_calculado:.2f}\n"
-    mensaje += f"📅 **SEMANAS:** {semanas_comp}/{semanas_config}\n"
+    mensaje += f"📅 **SEMANAS TOTALES:** {semanas}\n"
+    mensaje += f"📊 **PROGRESO:** {semanas_comp}/{semanas}\n"
     mensaje += f"💳 **PAGO SEMANAL:** ${pago_semanal:.2f}\n"
-    mensaje += f"📊 **PROGRESO:** {semanas_comp}/{semanas_config} semanas\n"
-    mensaje += f"⏰ **CONTADOR:** {estado_contador}\n\n"
-    mensaje += "💳 **Registrar pago:** /pagarealizado\n"
-    mensaje += "📞 **Contactar admin:** @tu_admin"
+    mensaje += f"⏰ **CONTADOR:** {estado_contador}\n"
+    
+    if dias_desde_ultimo != "N/A":
+        mensaje += f"📆 **Último avance:** {dias_desde_ultimo} días\n"
+    
+    if fecha_config:
+        fecha_config_dt = fecha_config if isinstance(fecha_config, datetime) else datetime.fromisoformat(str(fecha_config))
+        dias_desde_config = (datetime.now() - fecha_config_dt).days
+        mensaje += f"⚙️ **Configurado hace:** {dias_desde_config} días\n"
+    
+    mensaje += f"\n💳 **Registrar pago:** /pagarealizado\n"
+    mensaje += "📞 **Contactar admin:** @tu_admin\n\n"
+    
+    if contador_pausado:
+        mensaje += "ℹ️ *Tu contador está pausado. Contacta al admin para reanudarlo.*"
     
     await update.message.reply_text(mensaje)
 
@@ -2319,7 +2570,7 @@ async def catalogo_solo_lectura(update: Update, context: ContextTypes.DEFAULT_TY
     productos = cursor.fetchall()
     
     # Obtener configuración de semanas
-    cursor.execute("SELECT semanas FROM config_pagos LIMIT 1")
+    cursor.execute("SELECT semanas_default FROM config_pagos LIMIT 1")
     config = cursor.fetchone()
     conn.close()
     
@@ -2337,7 +2588,7 @@ async def catalogo_solo_lectura(update: Update, context: ContextTypes.DEFAULT_TY
             categorias[cat] = []
         categorias[cat].append((id_prod, nombre, precio, descripcion))
     
-    mensaje = f"🛍️ **CATÁLOGO DE PRODUCTOS**\n**Plan de pago: {semanas} SEMANAS**\n\n"
+    mensaje = f"🛍️ **CATÁLOGO DE PRODUCTOS**\n**Semanas por defecto: {semanas}**\n\n"
     mensaje += "📞 **Contacta al administrador para asignarte productos**\n\n"
     
     for categoria, productos_cat in categorias.items():
@@ -3042,7 +3293,6 @@ async def admin_ver_productos(update: Update, context: ContextTypes.DEFAULT_TYPE
     conn.close()
     
     semanas = config[0] if config else 10
-    contador_activo = config[1] if config else True
     
     if not productos:
         await update.message.reply_text("📭 No hay productos en el catálogo")
@@ -3050,7 +3300,6 @@ async def admin_ver_productos(update: Update, context: ContextTypes.DEFAULT_TYPE
         
     mensaje = f"🛍️ **CATÁLOGO COMPLETO - ADMIN**\n"
     mensaje += f"**Plan de pago:** {semanas} SEMANAS\n"
-    mensaje += f"**Contador:** {'🟢 ACTIVO' if contador_activo else '🔴 PAUSADO'}\n\n"
     
     for id_prod, nombre, precio, descripcion, categoria in productos:
         pago_semanal = precio / semanas
@@ -3179,219 +3428,57 @@ async def eliminar_producto(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # SISTEMA DE CONTROL DE CONTADOR (SOLO ADMIN)
 # =============================================
 
-async def estado_contador(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Ver estado del contador con información completa"""
+
+
+async def configurar_semanas_default(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Configurar semanas por defecto para NUEVOS usuarios (admin)"""
     if not is_admin(update.effective_user.id):
         await update.message.reply_text("❌ No tienes permisos de administrador")
         return
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    # Configuración global
-    cursor.execute("SELECT semanas, contador_activo FROM config_pagos LIMIT 1")
-    config = cursor.fetchone()
-    semanas = config[0] if config else 10
-    contador_activo = config[1] if config else True
-    
-    # Estadísticas
-    cursor.execute("SELECT COUNT(*) FROM planes_pago WHERE estado = 'activo'")
-    total_planes = cursor.fetchone()[0]
-    
-    cursor.execute("SELECT COUNT(*) FROM planes_pago WHERE contador_pausado = TRUE AND estado = 'activo'")
-    planes_pausados = cursor.fetchone()[0]
-    
-    cursor.execute("SELECT COUNT(*) FROM planes_pago WHERE semanas_completadas >= semanas AND estado = 'activo'")
-    planes_completados = cursor.fetchone()[0]
-    
-    conn.close()
-    
-    # ✅ CORRECCIÓN: Obtener fecha real del próximo job
-    proximo_avance = "No programado"
-    job_queue = context.application.job_queue
-    
-    if job_queue:
-        jobs = job_queue.get_jobs_by_name('incremento_automatico')
-        if jobs:
-            # Obtener el próximo job
-            job = jobs[0]
-            next_run = job.next_t
-            if next_run:
-                # Convertir a zona horaria local si es necesario
-                from datetime import timezone
-                if next_run.tzinfo is None:
-                    next_run = next_run.replace(tzinfo=timezone.utc)
-                
-                # Convertir a zona horaria local (opcional)
-                import pytz
-                local_tz = pytz.timezone('America/Caracas')  # Cambia por tu zona
-                next_run_local = next_run.astimezone(local_tz)
-                proximo_avance = next_run_local.strftime('%d/%m/%Y %H:%M')
-    
-    # Si no hay job programado, calcular uno estimado
-    if proximo_avance == "No programado":
-        ahora = datetime.now()
-        proximo_avance_estimado = ahora + timedelta(days=7)
-        proximo_avance = f"{proximo_avance_estimado.strftime('%d/%m/%Y %H:%M')} (estimado)"
-    
-    await update.message.reply_text(
-        f"⚙️ **ESTADO DEL SISTEMA - DETALLADO**\n\n"
-        f"🔢 **Semanas configuradas:** {semanas}\n"
-        f"📊 **Estado contador:** {'🟢 ACTIVO' if contador_activo else '🔴 PAUSADO'}\n\n"
-        f"📈 **ESTADÍSTICAS:**\n"
-        f"• 📋 Planes activos: {total_planes}\n"
-        f"• ⏸️ Planes pausados: {planes_pausados}\n"
-        f"• ✅ Planes completados: {planes_completados}\n\n"
-        f"🔄 **INCREMENTO AUTOMÁTICO:**\n"
-        f"• ⏰ Próximo: {proximo_avance}\n"
-        f"• 📅 Frecuencia: 7 días\n\n"
-        f"**Controles:**\n"
-        f"⏸️ /pausarcontador - Pausar contador\n"
-        f"▶️ /reanudarcontador - Reanudar contador\n"
-        f"🔢 /configurarsemanas - Cambiar semanas\n"
-        f"📈 /incrementarsemana - Incremento manual\n"
-        f"🔄 /forzarincremento - Forzar incremento (ignora pausa)\n"
-        f"🚀 /adelantarcompleto - Adelanto completo con reprogramación"
-    )
-
-async def pausar_contador(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Pausar contador de semanas"""
-    if not is_admin(update.effective_user.id):  # ← ACTUALIZADO
-        await update.message.reply_text("❌ No tienes permisos de administrador")
+    if not context.args:
+        # Mostrar valor actual
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT semanas_default FROM config_pagos LIMIT 1")
+        config = cursor.fetchone()
+        conn.close()
+        
+        semanas_actuales = config[0] if config else 10
+        
+        await update.message.reply_text(
+            f"⚙️ **CONFIGURACIÓN DE SEMANAS POR DEFECTO**\n\n"
+            f"🔢 **Actual:** {semanas_actuales} semanas\n\n"
+            f"Uso: /configurarsemanasdefault cantidad\n\n"
+            f"Esta configuración solo afecta a NUEVOS usuarios.\n"
+            f"Los usuarios existentes mantienen sus semanas individuales."
+        )
         return
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("UPDATE config_pagos SET contador_activo = FALSE")
-    cursor.execute("UPDATE planes_pago SET contador_pausado = TRUE WHERE estado = 'activo'")
-    conn.commit()
-    conn.close()
     
-    await update.message.reply_text(
-        "🔴 **CONTADOR PAUSADO**\n\n"
-        "El contador de semanas ha sido pausado para TODOS los planes activos.\n\n"
-        "Para reanudar usa: /reanudarcontador"
-    )
-
-async def reanudar_contador(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Reanudar contador de semanas"""
-    if not is_admin(update.effective_user.id):  # ← ACTUALIZADO
-        await update.message.reply_text("❌ No tienes permisos de administrador")
-        return
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("UPDATE config_pagos SET contador_activo = TRUE")
-    cursor.execute("UPDATE planes_pago SET contador_pausado = FALSE WHERE estado = 'activo'")
-    conn.commit()
-    conn.close()
-    
-    await update.message.reply_text(
-        "🟢 **CONTADOR REANUDADO**\n\n"
-        "El contador de semanas ha sido activado para TODOS los planes activos.\n\n"
-        "Para pausar usa: /pausarcontador"
-    )
-
-async def configurar_semanas(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Configurar semanas con opciones predefinidas y reinicio automático"""
-    if not is_admin(update.effective_user.id):  # ← ACTUALIZADO
-        await update.message.reply_text("❌ No tienes permisos de administrador")
-        return
-
-    if context.args:
-        try:
-            semanas = int(context.args[0])
-            if semanas < 1:
-                await update.message.reply_text("❌ El número de semanas debe ser mayor a 0")
-                return
-
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            
-            # 1. Actualizar configuración de semanas
-            cursor.execute("UPDATE config_pagos SET semanas = %s", (semanas,))
-            
-            # 2. ✅ REINICIAR AUTOMÁTICAMENTE TODOS LOS CONTADORES
-            cursor.execute("""
-                UPDATE planes_pago 
-                SET semanas_completadas = 0, 
-                    fecha_ultimo_pago = CURRENT_TIMESTAMP
-                WHERE estado = 'activo'
-            """)
-            planes_afectados = cursor.rowcount
-            
-            conn.commit()
-            conn.close()
-
-            await update.message.reply_text(
-                f"✅ **Configuración actualizada y contadores reiniciados**\n\n"
-                f"🔢 **Nuevas semanas de pago:** {semanas}\n"
-                f"🔄 **Planes reiniciados:** {planes_afectados}\n\n"
-                f"Todos los planes activos han sido reiniciados a semana 0.\n"
-                f"El sistema comenzará desde el inicio con {semanas} semanas."
-            )
+    try:
+        nuevas_semanas = int(context.args[0])
+        
+        if nuevas_semanas < 1 or nuevas_semanas > 52:
+            await update.message.reply_text("❌ Las semanas deben estar entre 1 y 52")
             return
-            
-        except ValueError:
-            await update.message.reply_text("❌ El número de semanas debe ser un número válido")
-            return
-
-    # Mostrar opciones de semanas (código existente se mantiene igual)
-    keyboard = [
-        [InlineKeyboardButton("🔄 4 Semanas", callback_data="semanas_4")],
-        [InlineKeyboardButton("🔄 8 Semanas", callback_data="semanas_8")],
-        [InlineKeyboardButton("🔄 12 Semanas", callback_data="semanas_12")],
-        [InlineKeyboardButton("🔄 16 Semanas", callback_data="semanas_16")],
-        [InlineKeyboardButton("🔄 20 Semanas", callback_data="semanas_20")],
-        [InlineKeyboardButton("✏️ Personalizado", callback_data="semanas_personalizado")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT semanas, contador_activo FROM config_pagos LIMIT 1")
-    config = cursor.fetchone()
-    conn.close()
-    
-    semanas_actuales = config[0] if config else 10
-    contador_activo = config[1] if config else True
-    
-    await update.message.reply_text(
-        f"⚙️ **CONFIGURAR SEMANAS DE PAGO**\n\n"
-        f"🔢 **Actual:** {semanas_actuales} semanas\n"
-        f"📊 **Contador:** {'🟢 ACTIVO' if contador_activo else '🔴 PAUSADO'}\n\n"
-        f"⚠️ **IMPORTANTE:** Al cambiar las semanas, todos los contadores se reiniciarán a 0.\n\n"
-        f"Selecciona el número de semanas para los planes de pago:",
-        reply_markup=reply_markup
-    )
-
-    # Mostrar opciones de semanas
-    keyboard = [
-        [InlineKeyboardButton("🔄 4 Semanas", callback_data="semanas_4")],
-        [InlineKeyboardButton("🔄 8 Semanas", callback_data="semanas_8")],
-        [InlineKeyboardButton("🔄 12 Semanas", callback_data="semanas_12")],
-        [InlineKeyboardButton("🔄 16 Semanas", callback_data="semanas_16")],
-        [InlineKeyboardButton("🔄 20 Semanas", callback_data="semanas_20")],
-        [InlineKeyboardButton("✏️ Personalizado", callback_data="semanas_personalizado")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT semanas, contador_activo FROM config_pagos LIMIT 1")
-    config = cursor.fetchone()
-    conn.close()
-    
-    semanas_actuales = config[0] if config else 10
-    contador_activo = config[1] if config else True
-    
-    await update.message.reply_text(
-        f"⚙️ **CONFIGURAR SEMANAS DE PAGO**\n\n"
-        f"🔢 **Actual:** {semanas_actuales} semanas\n"
-        f"📊 **Contador:** {'🟢 ACTIVO' if contador_activo else '🔴 PAUSADO'}\n\n"
-        f"Selecciona el número de semanas para los planes de pago:",
-        reply_markup=reply_markup
-    )
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Actualizar configuración por defecto
+        cursor.execute("UPDATE config_pagos SET semanas_default = %s", (nuevas_semanas,))
+        conn.commit()
+        conn.close()
+        
+        await update.message.reply_text(
+            f"✅ **Configuración por defecto actualizada**\n\n"
+            f"🔢 **Nuevas semanas por defecto:** {nuevas_semanas}\n\n"
+            f"Esta configuración aplica solo a NUEVOS usuarios.\n"
+            f"Usuarios existentes: usa /configurarsemanas_USERID"
+        )
+        
+    except ValueError:
+        await update.message.reply_text("❌ El número de semanas debe ser un número válido")
 
 # =============================================
 # FUNCIONES ADICIONALES PARA PAGOS
@@ -3770,6 +3857,330 @@ async def iniciar_asignacion_productos(update: Update, context: ContextTypes.DEF
     else:
         await update.message.reply_text(mensaje, reply_markup=reply_markup)
 
+# =============================================
+# ⚙️ SISTEMA DE CONFIGURACIÓN INDIVIDUAL DE SEMANAS
+# =============================================
+
+async def configurar_semanas_usuario(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Configurar semanas específicas para un usuario (admin)"""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("❌ No tienes permisos de administrador")
+        return
+    
+    # Verificar si hay argumentos
+    if not context.args or len(context.args) < 2:
+        await update.message.reply_text(
+            "⚙️ **CONFIGURAR SEMANAS POR USUARIO**\n\n"
+            "Uso: /configurarsemanas_USERID cantidad\n\n"
+            "Ejemplo:\n"
+            "/configurarsemanas_123456 8\n"
+            "/configurarsemanas_789012 12\n"
+            "/configurarsemanas_345678 16\n\n"
+            "📋 **Opciones comunes:**\n"
+            "• 4 semanas - Plan corto\n"
+            "• 8 semanas - Plan estándar\n"
+            "• 12 semanas - Plan extendido\n"
+            "• 16 semanas - Plan largo\n"
+            "• 20 semanas - Plan muy largo"
+        )
+        return
+    
+    try:
+        # Extraer user_id y cantidad del comando
+        command_text = update.message.text
+        partes = command_text.split(' ')
+        
+        # Formato: /configurarsemanas_123456 12
+        user_id = int(partes[0].split('_')[1])
+        nuevas_semanas = int(partes[1])
+        
+        if nuevas_semanas < 1:
+            await update.message.reply_text("❌ El número de semanas debe ser mayor a 0")
+            return
+        
+        if nuevas_semanas > 52:  # Límite de 1 año
+            await update.message.reply_text("❌ El número máximo de semanas es 52 (1 año)")
+            return
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # 1. Verificar si el usuario tiene plan activo
+        cursor.execute("""
+            SELECT p.id, p.semanas, p.semanas_completadas, p.total, p.productos_json,
+                   u.first_name, u.last_name
+            FROM planes_pago p
+            LEFT JOIN usuarios u ON p.user_id = u.user_id
+            WHERE p.user_id = %s AND p.estado = 'activo'
+        """, (user_id,))
+        
+        plan = cursor.fetchone()
+        
+        if not plan:
+            await update.message.reply_text("❌ Usuario no tiene plan activo")
+            conn.close()
+            return
+        
+        plan_id, semanas_actuales, semanas_comp, total_actual, productos_json, first_name, last_name = plan
+        nombre_completo = f"{first_name or ''} {last_name or ''}".strip()
+        
+        # 2. Calcular nuevo pago semanal
+        nuevo_pago_semanal = total_actual / nuevas_semanas if nuevas_semanas > 0 else 0
+        
+        # 3. Verificar si las semanas completadas exceden las nuevas
+        if semanas_comp > nuevas_semanas:
+            keyboard = [
+                [InlineKeyboardButton("✅ Sí, reiniciar a 0", callback_data=f"reiniciar_semanas_{user_id}_{nuevas_semanas}")],
+                [InlineKeyboardButton("🔄 Mantener completadas", callback_data=f"mantener_semanas_{user_id}_{nuevas_semanas}_{semanas_comp}")],
+                [InlineKeyboardButton("❌ Cancelar", callback_data=f"cancelar_config_{user_id}")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.message.reply_text(
+                f"⚠️ **CONFLICTO DE SEMANAS**\n\n"
+                f"👤 Usuario: {nombre_completo}\n"
+                f"📊 Semanas completadas: {semanas_comp}\n"
+                f"🔢 Nuevas semanas totales: {nuevas_semanas}\n\n"
+                f"❌ **El usuario ya completó más semanas de las que intentas configurar.**\n\n"
+                f"¿Qué deseas hacer?",
+                reply_markup=reply_markup
+            )
+            conn.close()
+            return
+        
+        # 4. Actualizar las semanas del usuario
+        cursor.execute("""
+            UPDATE planes_pago 
+            SET semanas = %s,
+                pago_semanal = %s,
+                fecha_configuracion = CURRENT_TIMESTAMP
+            WHERE id = %s
+        """, (nuevas_semanas, nuevo_pago_semanal, plan_id))
+        
+        conn.commit()
+        
+        # 5. Obtener productos para mostrar detalles
+        productos_lista = []
+        if productos_json:
+            if isinstance(productos_json, str):
+                productos_dict = json.loads(productos_json)
+            else:
+                productos_dict = productos_json
+            
+            for producto_id, cantidad in productos_dict.items():
+                cursor.execute("SELECT nombre, precio FROM productos WHERE id = %s", (int(producto_id),))
+                producto = cursor.fetchone()
+                if producto:
+                    nombre, precio = producto
+                    productos_lista.append(f"• {nombre} x{cantidad} - ${precio * cantidad:.2f}")
+        
+        conn.close()
+        
+        # 6. Mostrar confirmación
+        mensaje = f"✅ **SEMANAS CONFIGURADAS**\n\n"
+        mensaje += f"👤 **Usuario:** {nombre_completo}\n"
+        mensaje += f"🆔 **ID:** {user_id}\n\n"
+        mensaje += f"📊 **CAMBIO REALIZADO:**\n"
+        mensaje += f"• 📅 Semanas anteriores: {semanas_actuales}\n"
+        mensaje += f"• 📅 Nuevas semanas: {nuevas_semanas}\n"
+        mensaje += f"• 💰 Pago anterior: ${total_actual/semanas_actuales:.2f}/semana\n"
+        mensaje += f"• 💰 Nuevo pago: ${nuevo_pago_semanal:.2f}/semana\n"
+        mensaje += f"• 📈 Progreso mantiene: {semanas_comp}/{nuevas_semanas}\n\n"
+        
+        if productos_lista:
+            mensaje += "🛍️ **Productos asignados:**\n"
+            mensaje += "\n".join(productos_lista) + "\n\n"
+        
+        mensaje += f"📞 **El usuario ha sido notificado.**"
+        
+        await update.message.reply_text(mensaje)
+        
+        # 7. Notificar al usuario
+        try:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=f"⚙️ **CONFIGURACIÓN ACTUALIZADA**\n\n"
+                     f"El administrador ha modificado tu plan de pago:\n\n"
+                     f"📅 **Nuevas semanas totales:** {nuevas_semanas}\n"
+                     f"💰 **Nuevo pago semanal:** ${nuevo_pago_semanal:.2f}\n"
+                     f"📊 **Progreso actual:** {semanas_comp}/{nuevas_semanas}\n\n"
+                     f"📋 Ver detalles: /misplanes\n"
+                     f"❓ Consultas: Contacta al administrador"
+            )
+        except Exception as e:
+            print(f"❌ No se pudo notificar al usuario: {e}")
+        
+    except ValueError:
+        await update.message.reply_text("❌ Formato incorrecto. Usa: /configurarsemanas_USERID cantidad")
+    except Exception as e:
+        print(f"❌ Error en configurar_semanas_usuario: {e}")
+        await update.message.reply_text("❌ Error al configurar las semanas")
+
+async def configurar_semanas_busqueda(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Buscar usuario para configurar sus semanas (admin)"""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("❌ No tienes permisos de administrador")
+        return
+    
+    if not context.args:
+        await update.message.reply_text(
+            "🔍 **BUSCAR USUARIO PARA CONFIGURAR SEMANAS**\n\n"
+            "Uso: /configurarbusqueda nombre_del_usuario\n\n"
+            "Ejemplo:\n"
+            "/configurarbusqueda Juan Pérez\n"
+            "/configurarbusqueda Maria\n"
+            "/configurarbusqueda Carlos"
+        )
+        return
+    
+    nombre_busqueda = ' '.join(context.args).lower()
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Buscar usuarios con planes activos
+    cursor.execute("""
+        SELECT u.user_id, u.first_name, u.last_name, 
+               p.semanas, p.semanas_completadas, p.pago_semanal, p.total
+        FROM usuarios u
+        INNER JOIN planes_pago p ON u.user_id = p.user_id
+        WHERE p.estado = 'activo'
+        AND (LOWER(CONCAT(u.first_name, ' ', u.last_name)) LIKE %s 
+             OR LOWER(u.first_name) LIKE %s 
+             OR LOWER(u.last_name) LIKE %s)
+        ORDER BY u.first_name, u.last_name
+    """, (f'%{nombre_busqueda}%', f'%{nombre_busqueda}%', f'%{nombre_busqueda}%'))
+    
+    usuarios = cursor.fetchall()
+    conn.close()
+    
+    if not usuarios:
+        await update.message.reply_text(
+            f"❌ No se encontraron usuarios activos con: '{nombre_busqueda}'\n\n"
+            "Verifica que el usuario tenga un plan activo asignado."
+        )
+        return
+    
+    if len(usuarios) == 1:
+        # Si hay solo un resultado, mostrar opciones de configuración
+        user_id, first_name, last_name, semanas, semanas_comp, pago_semanal, total = usuarios[0]
+        await mostrar_opciones_semanas(update, context, user_id, first_name, last_name, semanas, semanas_comp, total)
+    else:
+        # Mostrar lista de usuarios encontrados
+        mensaje = f"🔍 **USUARIOS ENCONTRADOS** ({len(usuarios)})\n\n"
+        
+        keyboard = []
+        for user_id, first_name, last_name, semanas, semanas_comp, pago_semanal, total in usuarios:
+            nombre_completo = f"{first_name or ''} {last_name or ''}".strip()
+            
+            mensaje += f"👤 **{nombre_completo}**\n"
+            mensaje += f"📅 Semanas: {semanas_comp}/{semanas}\n"
+            mensaje += f"💰 Pago semanal: ${pago_semanal:.2f}\n"
+            mensaje += f"🆔 ID: {user_id}\n"
+            
+            # Botón para seleccionar este usuario
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"⚙️ {nombre_completo[:15]}...", 
+                    callback_data=f"config_usuario_{user_id}"
+                )
+            ])
+            
+            mensaje += "━━━━━━━━━━━━━━━━━━━━\n\n"
+        
+        keyboard.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_config_busqueda")])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(mensaje, reply_markup=reply_markup)
+
+async def ver_configuraciones_semanas(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Ver todas las configuraciones de semanas (admin)"""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("❌ No tienes permisos de administrador")
+        return
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Obtener todas las configuraciones
+    cursor.execute("""
+        SELECT u.user_id, u.first_name, u.last_name,
+               p.semanas, p.semanas_completadas, p.pago_semanal, p.total,
+               p.fecha_configuracion, p.contador_pausado
+        FROM planes_pago p
+        LEFT JOIN usuarios u ON p.user_id = u.user_id
+        WHERE p.estado = 'activo'
+        ORDER BY p.semanas DESC, u.first_name
+    """)
+    
+    configuraciones = cursor.fetchall()
+    
+    # Estadísticas
+    cursor.execute("""
+        SELECT 
+            COUNT(*) as total_usuarios,
+            AVG(semanas) as promedio_semanas,
+            MIN(semanas) as minimo_semanas,
+            MAX(semanas) as maximo_semanas,
+            SUM(CASE WHEN contador_pausado THEN 1 ELSE 0 END) as pausados
+        FROM planes_pago 
+        WHERE estado = 'activo'
+    """)
+    
+    stats = cursor.fetchone()
+    conn.close()
+    
+    if not configuraciones:
+        await update.message.reply_text("📭 No hay configuraciones activas")
+        return
+    
+    total_usuarios, promedio_semanas, minimo_semanas, maximo_semanas, pausados = stats
+    promedio_semanas = round(promedio_semanas or 0, 1)
+    
+    # Construir mensaje
+    mensaje = f"📊 **CONFIGURACIONES DE SEMANAS - SISTEMA**\n\n"
+    
+    # Estadísticas generales
+    mensaje += f"📈 **ESTADÍSTICAS:**\n"
+    mensaje += f"• 👥 Usuarios activos: {total_usuarios}\n"
+    mensaje += f"• 📅 Promedio semanas: {promedio_semanas}\n"
+    mensaje += f"• 📉 Mínimo semanas: {minimo_semanas or 0}\n"
+    mensaje += f"• 📈 Máximo semanas: {maximo_semanas or 0}\n"
+    mensaje += f"• ⏸️ Contadores pausados: {pausados or 0}\n\n"
+    
+    # Agrupar por cantidad de semanas
+    semanas_grupos = {}
+    for config in configuraciones:
+        semanas = config[3]  # índice de semanas
+        if semanas not in semanas_grupos:
+            semanas_grupos[semanas] = []
+        semanas_grupos[semanas].append(config)
+    
+    # Mostrar por grupos de semanas
+    for semanas in sorted(semanas_grupos.keys(), reverse=True):
+        grupo = semanas_grupos[semanas]
+        mensaje += f"📅 **{semanas} SEMANAS** ({len(grupo)} usuarios)\n"
+        
+        for user_id, first_name, last_name, sem, sem_comp, pago_sem, total, fecha_config, contador_pausado in grupo[:5]:  # Mostrar primeros 5
+            nombre_completo = f"{first_name or ''} {last_name or ''}".strip()
+            progreso = f"{sem_comp}/{sem}"
+            estado = "⏸️" if contador_pausado else "🟢"
+            
+            mensaje += f"  {estado} {nombre_completo[:15]}... - {progreso} - ${pago_sem:.2f}/sem\n"
+        
+        if len(grupo) > 5:
+            mensaje += f"  ... y {len(grupo) - 5} más\n"
+        
+        mensaje += "\n"
+    
+    mensaje += "🔧 **ACCIONES RÁPIDAS:**\n"
+    mensaje += "• /configurarbusqueda - Buscar usuario para configurar\n"
+    mensaje += "• /configurargrupo - Configurar grupo\n"
+    mensaje += "• /vercontadores - Control de contadores\n"
+    mensaje += "• /configurarsemanasdefault - Cambiar semanas por defecto"
+    
+    await update.message.reply_text(mensaje)
+
 
 # =============================================
 # MANEJO DE BOTONES GENERALES
@@ -4057,74 +4468,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("❌ **Operación cancelada**\n\nEl sistema de puntos se mantiene intacto.")
         
         
-        # BOTONES PARA INCREMENTO MANUAL
-    elif query.data == "reanudar_y_incrementar":
-        if not is_admin(user_id):  # ← ACTUALIZADO
-            await query.answer("❌ No tienes permisos", show_alert=True)
-            return
-            
-        try:
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            
-            # Reanudar contador
-            cursor.execute("UPDATE config_pagos SET contador_activo = TRUE")
-            
-            # Incrementar semanas
-            cursor.execute("""
-                UPDATE planes_pago 
-                SET semanas_completadas = semanas_completadas + 1,
-                    fecha_ultimo_pago = CURRENT_TIMESTAMP
-                WHERE estado = 'activo' 
-                AND contador_pausado = FALSE
-                AND semanas_completadas < semanas
-            """)
-            planes_afectados = cursor.rowcount
-            
-            conn.commit()
-            conn.close()
-            
-            await query.edit_message_text(
-                f"✅ **Contador reanudado e incremento realizado**\n\n"
-                f"📈 {planes_afectados} planes incrementados +1 semana\n"
-                f"🟢 Contador global REANUDADO"
-            )
-            
-        except Exception as e:
-            print(f"❌ Error: {e}")
-            await query.edit_message_text("❌ Error al procesar")
-            
-    elif query.data == "incrementar_force":
-        if not is_admin(user_id):  # ← ACTUALIZADO
-            await query.answer("❌ No tienes permisos", show_alert=True)
-            return
-            
-        try:
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            
-            # Solo incrementar sin reanudar contador
-            cursor.execute("""
-                UPDATE planes_pago 
-                SET semanas_completadas = semanas_completadas + 1,
-                    fecha_ultimo_pago = CURRENT_TIMESTAMP
-                WHERE estado = 'activo' 
-                AND semanas_completadas < semanas
-            """)
-            planes_afectados = cursor.rowcount
-            
-            conn.commit()
-            conn.close()
-            
-            await query.edit_message_text(
-                f"🚀 **INCREMENTO FORZADO**\n\n"
-                f"✅ {planes_afectados} planes incrementados +1 semana\n"
-                f"⏸️ Contador global sigue PAUSADO"
-            )
-            
-        except Exception as e:
-            print(f"❌ Error: {e}")
-            await query.edit_message_text("❌ Error al forzar incremento")
         
 # =============================================
 # FUNCIONES DE MANEJO DE MENSAJES
@@ -4449,89 +4792,605 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
-async def adelantar_semana_completo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Adelanta la semana Y reprograma el próximo avance automático"""
-    if not is_admin(update.effective_user.id):
-        await update.message.reply_text("❌ No tienes permisos de administrador")
-        return
+# =============================================
+# 🔄 FUNCIONES AUXILIARES PARA NUEVOS HANDLERS
+# =============================================
 
+async def handle_contador_individual(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Maneja comandos dinámicos de contadores individuales"""
+    command_text = update.message.text
+    partes = command_text.split('_')
+    
+    if partes[0] == '/avanzar':
+        await avanzar_contador_usuario(update, context)
+    elif partes[0] == '/pausar':
+        await pausar_contador_usuario(update, context)
+    elif partes[0] == '/reanudar':
+        await reanudar_contador_usuario(update, context)
+
+async def handle_configuracion_dinamica(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Maneja comandos dinámicos de configuración de semanas"""
+    await configurar_semanas_usuario(update, context)
+
+async def button_handler_contadores(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Maneja botones de contadores individuales"""
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    
+    if not is_admin(user_id):
+        await query.answer("❌ No tienes permisos", show_alert=True)
+        return
+    
+    data = query.data
+    
+    if data.startswith("avanzar_forzar_"):
+        user_id_avanzar = int(data.split('_')[2])
+        await avanzar_usuario_forzado(query, context, user_id_avanzar)
+    
+    elif data.startswith("reanudar_y_avanzar_"):
+        user_id_avanzar = int(data.split('_')[3])
+        await reanudar_y_avanzar_usuario(query, context, user_id_avanzar)
+
+async def button_handler_config_semanas(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Maneja botones de configuración de semanas"""
+    query = update.callback_query
+    await query.answer()
+    
+    if not is_admin(query.from_user.id):
+        await query.answer("❌ No tienes permisos", show_alert=True)
+        return
+    
+    data = query.data
+    
+    if data.startswith("config_usuario_"):
+        user_id = int(data.split('_')[2])
+        await mostrar_configuracion_usuario(query, context, user_id)
+    
+    elif data.startswith("config_semanas_"):
+        partes = data.split('_')
+        user_id = int(partes[2])
+        semanas = int(partes[3])
+        await aplicar_configuracion_semanas_boton(query, context, user_id, semanas)
+    
+    elif data.startswith("reiniciar_semanas_"):
+        partes = data.split('_')
+        user_id = int(partes[2])
+        semanas = int(partes[3])
+        await reiniciar_semanas_completadas(query, context, user_id, semanas)
+    
+    elif data.startswith("mantener_semanas_"):
+        partes = data.split('_')
+        user_id = int(partes[2])
+        semanas = int(partes[3])
+        semanas_comp = int(partes[4])
+        await mantener_semanas_completadas(query, context, user_id, semanas, semanas_comp)
+    
+    elif data.startswith("cancelar_config_"):
+        await query.edit_message_text("❌ **Configuración cancelada**")
+    
+    elif data == "cancelar_config_busqueda":
+        await query.edit_message_text("❌ **Búsqueda cancelada**")
+
+async def mostrar_configuracion_usuario(query, context, user_id):
+    """Muestra opciones de configuración para un usuario"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        SELECT u.first_name, u.last_name, p.semanas, p.semanas_completadas, p.total
+        FROM planes_pago p
+        LEFT JOIN usuarios u ON p.user_id = u.user_id
+        WHERE p.user_id = %s AND p.estado = 'activo'
+    """, (user_id,))
+    
+    plan = cursor.fetchone()
+    conn.close()
+    
+    if not plan:
+        await query.edit_message_text("❌ Usuario no encontrado")
+        return
+    
+    first_name, last_name, semanas_actuales, semanas_comp, total = plan
+    nombre_completo = f"{first_name or ''} {last_name or ''}".strip()
+    
+    # Crear teclado con opciones
+    keyboard = [
+        [InlineKeyboardButton("🔄 4 Semanas", callback_data=f"config_semanas_{user_id}_4"),
+         InlineKeyboardButton("🔄 8 Semanas", callback_data=f"config_semanas_{user_id}_8")],
+        [InlineKeyboardButton("🔄 12 Semanas", callback_data=f"config_semanas_{user_id}_12"),
+         InlineKeyboardButton("🔄 16 Semanas", callback_data=f"config_semanas_{user_id}_16")],
+        [InlineKeyboardButton("🔄 20 Semanas", callback_data=f"config_semanas_{user_id}_20"),
+         InlineKeyboardButton("✏️ Personalizado", callback_data=f"config_personalizado_{user_id}")],
+        [InlineKeyboardButton("❌ Cancelar", callback_data=f"cancelar_config_{user_id}")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    pago_actual = total / semanas_actuales if semanas_actuales > 0 else 0
+    
+    mensaje = f"⚙️ **CONFIGURAR SEMANAS PARA USUARIO**\n\n"
+    mensaje += f"👤 **Usuario:** {nombre_completo}\n"
+    mensaje += f"🆔 **ID:** {user_id}\n\n"
+    mensaje += f"📊 **CONFIGURACIÓN ACTUAL:**\n"
+    mensaje += f"• 📅 Semanas totales: {semanas_actuales}\n"
+    mensaje += f"• 📈 Semanas completadas: {semanas_comp}\n"
+    mensaje += f"• 💰 Pago semanal: ${pago_actual:.2f}\n"
+    mensaje += f"• 💵 Total del plan: ${total:.2f}\n\n"
+    mensaje += f"📋 **SELECCIONA NUEVAS SEMANAS:**\n"
+    mensaje += f"(El pago semanal se recalculará automáticamente)"
+    
+    await query.edit_message_text(mensaje, reply_markup=reply_markup)
+
+async def aplicar_configuracion_semanas_boton(query, context, user_id, nuevas_semanas):
+    """Aplica configuración desde botón"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # 1. Adelantar semanas
+        # Obtener información actual
+        cursor.execute("""
+            SELECT p.id, p.semanas, p.semanas_completadas, p.total,
+                   u.first_name, u.last_name
+            FROM planes_pago p
+            LEFT JOIN usuarios u ON p.user_id = u.user_id
+            WHERE p.user_id = %s AND p.estado = 'activo'
+        """, (user_id,))
+        
+        plan = cursor.fetchone()
+        
+        if not plan:
+            await query.edit_message_text("❌ Usuario no encontrado")
+            return
+        
+        plan_id, semanas_actuales, semanas_comp, total, first_name, last_name = plan
+        nombre_completo = f"{first_name or ''} {last_name or ''}".strip()
+        
+        # Verificar conflicto
+        if semanas_comp > nuevas_semanas:
+            keyboard = [
+                [InlineKeyboardButton("✅ Sí, reiniciar", callback_data=f"reiniciar_semanas_{user_id}_{nuevas_semanas}")],
+                [InlineKeyboardButton("🔄 Mantener", callback_data=f"mantener_semanas_{user_id}_{nuevas_semanas}_{semanas_comp}")],
+                [InlineKeyboardButton("❌ Cancelar", callback_data=f"cancelar_config_{user_id}")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await query.edit_message_text(
+                f"⚠️ **CONFLICTO DETECTADO**\n\n"
+                f"El usuario ya completó {semanas_comp} semanas.\n"
+                f"Intentas configurar {nuevas_semanas} semanas totales.\n\n"
+                f"¿Qué deseas hacer con las semanas completadas?",
+                reply_markup=reply_markup
+            )
+            conn.close()
+            return
+        
+        # Calcular nuevo pago semanal
+        nuevo_pago_semanal = total / nuevas_semanas if nuevas_semanas > 0 else 0
+        
+        # Actualizar configuración
         cursor.execute("""
             UPDATE planes_pago 
-            SET semanas_completadas = semanas_completadas + 1,
-                fecha_ultimo_pago = CURRENT_TIMESTAMP
-            WHERE estado = 'activo' 
-            AND semanas_completadas < semanas
-        """)
-        planes_afectados = cursor.rowcount
-        
-        # 2. Obtener estadísticas
-        cursor.execute("SELECT COUNT(*) FROM planes_pago WHERE estado = 'activo'")
-        total_planes = cursor.fetchone()[0]
-        
-        cursor.execute("SELECT COUNT(*) FROM planes_pago WHERE contador_pausado = TRUE AND estado = 'activo'")
-        planes_pausados = cursor.fetchone()[0]
+            SET semanas = %s,
+                pago_semanal = %s,
+                fecha_configuracion = CURRENT_TIMESTAMP
+            WHERE id = %s
+        """, (nuevas_semanas, nuevo_pago_semanal, plan_id))
         
         conn.commit()
         conn.close()
         
-        # 3. ✅ REPROGRAMAR EL JOB AUTOMÁTICO (CORRECCIÓN IMPLEMENTADA)
-        job_queue = context.application.job_queue
-        if job_queue:
-            try:
-                # Eliminar todos los jobs de incremento existentes
-                jobs = job_queue.get_jobs_by_name('incremento_automatico')
-                for job in jobs:
-                    job.schedule_removal()
-                
-                # También eliminar jobs recurrentes si existen
-                recurring_jobs = job_queue.get_jobs_by_name('incremento_automatico_recurring')
-                for job in recurring_jobs:
-                    job.schedule_removal()
-                
-                print("✅ Jobs anteriores eliminados")
-                
-                # Crear nuevo job que se ejecutará en exactamente 7 días desde AHORA
-                job_queue.run_repeating(
-                    incrementar_semanas_automatico,
-                    interval=604800,  # 7 días en segundos
-                    first=604800,     # Primera ejecución en 7 días desde ahora
-                    name='incremento_automatico'
-                )
-                
-                print("✅ Nuevo job programado para 7 días")
-                
-            except Exception as e:
-                print(f"❌ Error al reprogramar job: {e}")
-                # Si falla la reprogramación, al menos mantener el funcionamiento básico
-                await update.message.reply_text("⚠️ Adelanto realizado pero hubo un error al reprogramar el ciclo automático")
+        # Notificar al usuario
+        try:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=f"⚙️ **CONFIGURACIÓN ACTUALIZADA**\n\n"
+                     f"Tu plan ha sido configurado a {nuevas_semanas} semanas.\n\n"
+                     f"💰 **Nuevo pago semanal:** ${nuevo_pago_semanal:.2f}\n"
+                     f"📊 **Progreso:** {semanas_comp}/{nuevas_semanas}\n\n"
+                     f"📋 Ver detalles: /misplanes"
+            )
+        except Exception as e:
+            print(f"❌ No se pudo notificar al usuario: {e}")
         
-        # 4. Calcular NUEVA fecha de próximo avance
-        ahora = datetime.now()
-        proximo_avance = ahora + timedelta(days=7)
-        
-        await update.message.reply_text(
-            f"🚀 **ADELANTO COMPLETO REALIZADO**\n\n"
-            f"📈 **Planes afectados:** {planes_afectados}\n"
-            f"📋 **Total planes activos:** {total_planes}\n"
-            f"⏸️ **Planes pausados:** {planes_pausados}\n\n"
-            f"🔄 **PRÓXIMO AVANCE AUTOMÁTICO REPROGRAMADO:**\n"
-            f"📅 **Nueva fecha:** {proximo_avance.strftime('%d/%m/%Y %H:%M')}\n"
-            f"⏰ **En approx:** 7 días\n\n"
-            f"✅ **El ciclo semanal ha sido reprogramado correctamente**"
+        await query.edit_message_text(
+            f"✅ **CONFIGURACIÓN APLICADA**\n\n"
+            f"👤 Usuario: {nombre_completo}\n"
+            f"📅 Nuevas semanas: {nuevas_semanas}\n"
+            f"💰 Pago semanal: ${nuevo_pago_semanal:.2f}\n\n"
+            f"📞 El usuario ha sido notificado."
         )
         
-        # 5. Notificar usuarios
-        await notificar_usuarios_incremento(context, "adelanto_completo")
-                    
     except Exception as e:
-        print(f"❌ Error en adelanto completo: {e}")
-        await update.message.reply_text("❌ Error al adelantar semanas")
+        print(f"❌ Error en aplicar_configuracion: {e}")
+        await query.edit_message_text("❌ Error al aplicar configuración")
 
+async def avanzar_usuario_forzado(query, context, user_id):
+    """Avanza el contador de un usuario incluso si está pausado"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT p.id, p.semanas_completadas, p.semanas,
+                   u.first_name, u.last_name
+            FROM planes_pago p
+            LEFT JOIN usuarios u ON p.user_id = u.user_id
+            WHERE p.user_id = %s AND p.estado = 'activo'
+        """, (user_id,))
+        
+        plan = cursor.fetchone()
+        
+        if not plan:
+            await query.edit_message_text("❌ Usuario no encontrado")
+            return
+        
+        plan_id, semanas_comp, semanas_tot, first_name, last_name = plan
+        
+        if semanas_comp >= semanas_tot:
+            await query.edit_message_text("✅ Este usuario ya completó su plan")
+            conn.close()
+            return
+        
+        nuevas_semanas = semanas_comp + 1
+        cursor.execute("""
+            UPDATE planes_pago 
+            SET semanas_completadas = %s,
+                fecha_ultimo_pago = CURRENT_TIMESTAMP
+            WHERE id = %s
+        """, (nuevas_semanas, plan_id))
+        
+        conn.commit()
+        conn.close()
+        
+        nombre_completo = f"{first_name or ''} {last_name or ''}".strip()
+        
+        # Notificar al usuario
+        try:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=f"📅 **AVANCE FORZADO**\n\n"
+                     f"Tu plan ha avanzado a la semana {nuevas_semanas}/{semanas_tot}\n\n"
+                     f"⚠️ Este avance se realizó aunque tu contador estaba pausado.\n"
+                     f"📞 Contacta al administrador para más información."
+            )
+        except Exception as e:
+            print(f"❌ No se pudo notificar al usuario: {e}")
+        
+        await query.edit_message_text(
+            f"🚀 **AVANCE FORZADO REALIZADO**\n\n"
+            f"👤 Usuario: {nombre_completo}\n"
+            f"📊 Nuevo progreso: {nuevas_semanas}/{semanas_tot}\n\n"
+            f"⚠️ Se ignoró el estado de pausa del contador."
+        )
+        
+    except Exception as e:
+        print(f"❌ Error en avance forzado: {e}")
+        await query.edit_message_text("❌ Error en avance forzado")
+
+async def reanudar_y_avanzar_usuario(query, context, user_id):
+    """Reanuda y avanza el contador de un usuario"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT p.id, p.semanas_completadas, p.semanas,
+                   u.first_name, u.last_name
+            FROM planes_pago p
+            LEFT JOIN usuarios u ON p.user_id = u.user_id
+            WHERE p.user_id = %s AND p.estado = 'activo'
+        """, (user_id,))
+        
+        plan = cursor.fetchone()
+        
+        if not plan:
+            await query.edit_message_text("❌ Usuario no encontrado")
+            return
+        
+        plan_id, semanas_comp, semanas_tot, first_name, last_name = plan
+        
+        if semanas_comp >= semanas_tot:
+            await query.edit_message_text("✅ Este usuario ya completó su plan")
+            conn.close()
+            return
+        
+        # Reanudar contador
+        cursor.execute("UPDATE planes_pago SET contador_pausado = FALSE WHERE id = %s", (plan_id,))
+        
+        # Avanzar contador
+        nuevas_semanas = semanas_comp + 1
+        cursor.execute("""
+            UPDATE planes_pago 
+            SET semanas_completadas = %s,
+                fecha_ultimo_pago = CURRENT_TIMESTAMP
+            WHERE id = %s
+        """, (nuevas_semanas, plan_id))
+        
+        conn.commit()
+        conn.close()
+        
+        nombre_completo = f"{first_name or ''} {last_name or ''}".strip()
+        
+        # Notificar al usuario
+        try:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=f"📅 **CONTADOR REANUDADO Y AVANZADO**\n\n"
+                     f"✅ Tu contador ha sido reanudado.\n"
+                     f"📊 Progreso actual: {nuevas_semanas}/{semanas_tot}\n\n"
+                     f"💳 Recuerda realizar tu pago semanal."
+            )
+        except Exception as e:
+            print(f"❌ No se pudo notificar al usuario: {e}")
+        
+        await query.edit_message_text(
+            f"✅ **CONTADOR REANUDADO Y AVANZADO**\n\n"
+            f"👤 Usuario: {nombre_completo}\n"
+            f"📊 Nuevo progreso: {nuevas_semanas}/{semanas_tot}\n\n"
+            f"🟢 Contador reanudado y avanzado exitosamente."
+        )
+        
+    except Exception as e:
+        print(f"❌ Error en reanudar y avanzar: {e}")
+        await query.edit_message_text("❌ Error en operación")
+
+async def reiniciar_semanas_completadas(query, context, user_id, nuevas_semanas):
+    """Reinicia las semanas completadas a 0"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Obtener información
+        cursor.execute("""
+            SELECT p.id, p.total, u.first_name, u.last_name
+            FROM planes_pago p
+            LEFT JOIN usuarios u ON p.user_id = u.user_id
+            WHERE p.user_id = %s AND p.estado = 'activo'
+        """, (user_id,))
+        
+        plan = cursor.fetchone()
+        
+        if not plan:
+            await query.edit_message_text("❌ Usuario no encontrado")
+            return
+        
+        plan_id, total, first_name, last_name = plan
+        nombre_completo = f"{first_name or ''} {last_name or ''}".strip()
+        
+        # Calcular nuevo pago semanal
+        nuevo_pago_semanal = total / nuevas_semanas if nuevas_semanas > 0 else 0
+        
+        # Actualizar (reiniciar semanas completadas)
+        cursor.execute("""
+            UPDATE planes_pago 
+            SET semanas = %s,
+                pago_semanal = %s,
+                semanas_completadas = 0,
+                fecha_configuracion = CURRENT_TIMESTAMP,
+                fecha_ultimo_pago = CURRENT_TIMESTAMP
+            WHERE id = %s
+        """, (nuevas_semanas, nuevo_pago_semanal, plan_id))
+        
+        conn.commit()
+        conn.close()
+        
+        # Notificar al usuario
+        try:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=f"🔄 **PLAN REINICIADO**\n\n"
+                     f"Tu plan ha sido reiniciado:\n\n"
+                     f"📅 **Nuevas semanas totales:** {nuevas_semanas}\n"
+                     f"💰 **Nuevo pago semanal:** ${nuevo_pago_semanal:.2f}\n"
+                     f"📊 **Progreso:** 0/{nuevas_semanas} (reiniciado)\n\n"
+                     f"⚠️ **Tu progreso anterior se perdió.**\n"
+                     f"📞 Contacta al administrador para más información."
+            )
+        except Exception as e:
+            print(f"❌ No se pudo notificar al usuario: {e}")
+        
+        await query.edit_message_text(
+            f"🔄 **PLAN REINICIADO COMPLETAMENTE**\n\n"
+            f"👤 Usuario: {nombre_completo}\n"
+            f"📅 Nuevas semanas: {nuevas_semanas}\n"
+            f"💰 Pago semanal: ${nuevo_pago_semanal:.2f}\n"
+            f"📊 Progreso: REINICIADO A 0\n\n"
+            f"⚠️ El usuario ha sido notificado del reinicio."
+        )
+        
+    except Exception as e:
+        print(f"❌ Error en reiniciar_semanas: {e}")
+        await query.edit_message_text("❌ Error al reiniciar semanas")
+
+async def mantener_semanas_completadas(query, context, user_id, nuevas_semanas, semanas_comp):
+    """Mantiene las semanas completadas existentes"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Obtener información
+        cursor.execute("""
+            SELECT p.id, p.total, u.first_name, u.last_name
+            FROM planes_pago p
+            LEFT JOIN usuarios u ON p.user_id = u.user_id
+            WHERE p.user_id = %s AND p.estado = 'activo'
+        """, (user_id,))
+        
+        plan = cursor.fetchone()
+        
+        if not plan:
+            await query.edit_message_text("❌ Usuario no encontrado")
+            return
+        
+        plan_id, total, first_name, last_name = plan
+        nombre_completo = f"{first_name or ''} {last_name or ''}".strip()
+        
+        # Calcular nuevo pago semanal
+        nuevo_pago_semanal = total / nuevas_semanas if nuevas_semanas > 0 else 0
+        
+        # Actualizar (mantener semanas completadas)
+        cursor.execute("""
+            UPDATE planes_pago 
+            SET semanas = %s,
+                pago_semanal = %s,
+                fecha_configuracion = CURRENT_TIMESTAMP
+            WHERE id = %s
+        """, (nuevas_semanas, nuevo_pago_semanal, plan_id))
+        
+        conn.commit()
+        conn.close()
+        
+        # Verificar si ya completó el plan con nuevas semanas
+        if semanas_comp >= nuevas_semanas:
+            estado_progreso = "✅ COMPLETADO"
+        else:
+            estado_progreso = f"{semanas_comp}/{nuevas_semanas}"
+        
+        # Notificar al usuario
+        try:
+            if semanas_comp >= nuevas_semanas:
+                mensaje = f"🎉 **¡PLAN COMPLETADO!**\n\nYa completaste las {nuevas_semanas} semanas.\n📞 Contacta al administrador."
+            else:
+                mensaje = f"⚙️ **CONFIGURACIÓN ACTUALIZADA**\n\nTu plan ahora es de {nuevas_semanas} semanas.\n📊 Progreso: {semanas_comp}/{nuevas_semanas}"
+            
+            await context.bot.send_message(chat_id=user_id, text=mensaje)
+        except Exception as e:
+            print(f"❌ No se pudo notificar al usuario: {e}")
+        
+        await query.edit_message_text(
+            f"✅ **CONFIGURACIÓN APLICADA (MANTENIENDO PROGRESO)**\n\n"
+            f"👤 Usuario: {nombre_completo}\n"
+            f"📅 Nuevas semanas: {nuevas_semanas}\n"
+            f"💰 Pago semanal: ${nuevo_pago_semanal:.2f}\n"
+            f"📊 Progreso mantiene: {estado_progreso}\n\n"
+            f"📞 El usuario ha sido notificado."
+        )
+        
+    except Exception as e:
+        print(f"❌ Error en mantener_semanas: {e}")
+        await query.edit_message_text("❌ Error al mantener semanas")
+
+async def handle_semanas_personalizadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Maneja la entrada de semanas personalizadas por el admin"""
+    user_id = update.effective_user.id
+    
+    if not is_admin(user_id):
+        return
+    
+    # Buscar si hay solicitud pendiente de configuración personalizada
+    tiene_solicitud = False
+    usuario_target = None
+    
+    for key in context.user_data.keys():
+        if key.startswith('config_personalizado_'):
+            tiene_solicitud = True
+            usuario_target = int(key.split('_')[2])
+            break
+    
+    if not tiene_solicitud:
+        return
+    
+    try:
+        semanas = int(update.message.text.strip())
+        
+        if semanas < 1 or semanas > 52:
+            await update.message.reply_text("❌ Las semanas deben estar entre 1 y 52")
+            return
+        
+        # Aplicar configuración
+        await aplicar_configuracion_semanas_directa(update, context, usuario_target, semanas)
+        
+        # Limpiar datos temporales
+        del context.user_data[f'config_personalizado_{usuario_target}']
+        
+    except ValueError:
+        await update.message.reply_text("❌ Por favor envía un número válido (ej: 15, 18, 22)")
+
+async def aplicar_configuracion_semanas_directa(update, context, user_id, nuevas_semanas):
+    """Aplica configuración directa desde entrada de texto"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT p.id, p.semanas, p.semanas_completadas, p.total,
+                   u.first_name, u.last_name
+            FROM planes_pago p
+            LEFT JOIN usuarios u ON p.user_id = u.user_id
+            WHERE p.user_id = %s AND p.estado = 'activo'
+        """, (user_id,))
+        
+        plan = cursor.fetchone()
+        
+        if not plan:
+            await update.message.reply_text("❌ Usuario no encontrado")
+            return
+        
+        plan_id, semanas_actuales, semanas_comp, total, first_name, last_name = plan
+        nombre_completo = f"{first_name or ''} {last_name or ''}".strip()
+        
+        # Verificar conflicto
+        if semanas_comp > nuevas_semanas:
+            keyboard = [
+                [InlineKeyboardButton("✅ Sí, reiniciar", callback_data=f"reiniciar_semanas_{user_id}_{nuevas_semanas}")],
+                [InlineKeyboardButton("🔄 Mantener", callback_data=f"mantener_semanas_{user_id}_{nuevas_semanas}_{semanas_comp}")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.message.reply_text(
+                f"⚠️ **CONFLICTO DETECTADO**\n\n"
+                f"El usuario ya completó {semanas_comp} semanas.\n"
+                f"Intentas configurar {nuevas_semanas} semanas totales.\n\n"
+                f"¿Qué deseas hacer con las semanas completadas?",
+                reply_markup=reply_markup
+            )
+            conn.close()
+            return
+        
+        # Calcular nuevo pago semanal
+        nuevo_pago_semanal = total / nuevas_semanas if nuevas_semanas > 0 else 0
+        
+        # Actualizar configuración
+        cursor.execute("""
+            UPDATE planes_pago 
+            SET semanas = %s,
+                pago_semanal = %s,
+                fecha_configuracion = CURRENT_TIMESTAMP
+            WHERE id = %s
+        """, (nuevas_semanas, nuevo_pago_semanal, plan_id))
+        
+        conn.commit()
+        conn.close()
+        
+        # Notificar al usuario
+        try:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=f"⚙️ **CONFIGURACIÓN ACTUALIZADA**\n\n"
+                     f"Tu plan ahora es de {nuevas_semanas} semanas.\n\n"
+                     f"💰 **Nuevo pago semanal:** ${nuevo_pago_semanal:.2f}\n"
+                     f"📊 **Progreso:** {semanas_comp}/{nuevas_semanas}\n\n"
+                     f"📋 Ver detalles: /misplanes"
+            )
+        except Exception as e:
+            print(f"❌ No se pudo notificar al usuario: {e}")
+        
+        await update.message.reply_text(
+            f"✅ **CONFIGURACIÓN PERSONALIZADA APLICADA**\n\n"
+            f"👤 Usuario: {nombre_completo}\n"
+            f"📅 Nuevas semanas: {nuevas_semanas}\n"
+            f"💰 Pago semanal: ${nuevo_pago_semanal:.2f}\n\n"
+            f"📞 El usuario ha sido notificado."
+        )
+        
+    except Exception as e:
+        print(f"❌ Error en configuración personalizada: {e}")
+        await update.message.reply_text("❌ Error al aplicar configuración")
+
+# =============================================
+# FUNCIÓN MAIN
+# =============================================
 
 
 def main():
@@ -4557,19 +5416,17 @@ def main():
     )
     
     # =============================================
-    # 🎯 ORDEN CORREGIDO DE HANDLERS - SOLUCIÓN DEFINITIVA
+    # 🎯 ORDEN CORREGIDO DE HANDLERS - SISTEMA ACTUALIZADO
     # =============================================
     
-    # 🚨 PRIMERO Y MÁS IMPORTANTE: El handler específico para /verpagostodos
-    # Debe ir ANTES de cualquier otro handler que pueda interferir
+    # 🚨 PRIMERO: Handlers específicos importantes
     application.add_handler(CommandHandler("verpagostodos", verpagostodos))
     print("✅ Handler /verpagostodos agregado (PRIMER LUGAR)")
     
-    # 🚨 SEGUNDO: El handler para /verpago_XXXX (que era parte del problema)
-    # Agregarlo como handler específico
+    # 🚨 SEGUNDO: Handler para /verpago
     application.add_handler(CommandHandler("verpago", verpago_detalle))
     
-    # TERCERO: Otros handlers de comandos específicos
+    # TERCERO: Comandos básicos para usuarios
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("cancelar", cancelar))
     application.add_handler(CommandHandler("miperfil", miperfil))
@@ -4577,73 +5434,104 @@ def main():
     application.add_handler(CommandHandler("mistatus", mistatus))
     application.add_handler(CommandHandler("mispuntos", mispuntos))
     application.add_handler(CommandHandler("referidos", referidos))
-    application.add_handler(CommandHandler("verasignaciones", ver_asignaciones))
     application.add_handler(CommandHandler("catalogo", catalogo_solo_lectura))
-    application.add_handler(CommandHandler("misplanes", mis_planes_mejorado))
-    application.add_handler(CommandHandler("adelantarcompleto", adelantar_semana_completo))
+    application.add_handler(CommandHandler("misplanes", mis_planes_mejorado))  # ← ACTUALIZADO
+    
+    # CUARTO: Comandos de administración (CATÁLOGO)
     application.add_handler(CommandHandler("adminverproductos", admin_ver_productos))
     application.add_handler(CommandHandler("adminagregarproducto", admin_agregar_producto))
+    application.add_handler(CommandHandler("verasignaciones", ver_asignaciones))
+    application.add_handler(CommandHandler("asignar", buscar_usuario_asignar))
+    
+    # QUINTO: Comandos de administración (PAGOS)
     application.add_handler(CommandHandler("verpagos", verpagos))
     application.add_handler(CommandHandler("verusuarios", verusuarios))
-    application.add_handler(CommandHandler("estadocontador", estado_contador))
-    application.add_handler(CommandHandler("pausarcontador", pausar_contador))
-    application.add_handler(CommandHandler("reanudarcontador", reanudar_contador))
-    application.add_handler(CommandHandler("configurarsemanas", configurar_semanas))
+    
+    # SEXTO: 🆕 SISTEMA DE CONTADORES INDIVIDUALES (NUEVO)
+    application.add_handler(CommandHandler("vercontadores", control_contador_usuario))
+    application.add_handler(CommandHandler("avanzartodos", avanzar_todos_usuarios))
+    application.add_handler(CommandHandler("pausartodos", pausar_todos_usuarios))
+    application.add_handler(CommandHandler("reanudartodos", reanudar_todos_usuarios))
+    
+    # SÉPTIMO: 🆕 SISTEMA DE CONFIGURACIÓN INDIVIDUAL DE SEMANAS (NUEVO)
+    application.add_handler(CommandHandler("configurarsemanasdefault", configurar_semanas_default))
+    application.add_handler(CommandHandler("configurarbusqueda", configurar_semanas_busqueda))
+    application.add_handler(CommandHandler("verconfiguraciones", ver_configuraciones_semanas))
+    
+    # OCTAVO: Sistema de puntos (existente)
     application.add_handler(CommandHandler("rankingpuntos", ranking_puntos))
     application.add_handler(CommandHandler("verreferidos", ver_referidos_pendientes))
     application.add_handler(CommandHandler("vaciarranking", vaciar_ranking_puntos))
     application.add_handler(CommandHandler("agregarpuntos", agregar_puntos_admin))
     application.add_handler(CommandHandler("quitarpuntos", quitar_puntos_admin))
     application.add_handler(CommandHandler("establecerpuntos", establecer_puntos_admin))
-    application.add_handler(CommandHandler("incrementarsemana", incrementar_semana_manual))
-    application.add_handler(CommandHandler("forzarincremento", forzar_incremento))
-    application.add_handler(CommandHandler("asignar", buscar_usuario_asignar))
     
-    # CUARTO: Handler dinámico MODIFICADO (sin "verpago" que ya manejamos arriba)
+    # ⚠️ NOVENO: ELIMINAR COMANDOS OBSOLETOS - COMENTAR O ELIMINAR ESTOS:
+    # ❌ ELIMINAR ESTAS LÍNEAS (ya no existen):
+    # application.add_handler(CommandHandler("estadocontador", estado_contador))  # ❌ OBSOLETO
+    # application.add_handler(CommandHandler("pausarcontador", pausar_contador))  # ❌ OBSOLETO  
+    # application.add_handler(CommandHandler("reanudarcontador", reanudar_contador))  # ❌ OBSOLETO
+    # application.add_handler(CommandHandler("configurarsemanas", configurar_semanas))  # ❌ OBSOLETO
+    # application.add_handler(CommandHandler("incrementarsemana", incrementar_semana_manual))  # ❌ OBSOLETO
+    # application.add_handler(CommandHandler("forzarincremento", forzar_incremento))  # ❌ OBSOLETO
+    # application.add_handler(CommandHandler("adelantarcompleto", adelantar_semana_completo))  # ❌ OBSOLETO
+    
+    # DÉCIMO: Handlers dinámicos para usuarios específicos (NUEVOS)
+    application.add_handler(MessageHandler(
+        filters.Regex(r'^\/(avanzar|pausar|reanudar)_\d+'),
+        handle_contador_individual
+    ))
+    
+    application.add_handler(MessageHandler(
+        filters.Regex(r'^\/configurarsemanas_\d+'),
+        handle_configuracion_dinamica
+    ))
+    
+    # Handler dinámico existente (mantener)
     application.add_handler(MessageHandler(
         filters.Regex(r'^\/(verimagen|confirmar|rechazar|borrar|borrarusuario|editarproducto|eliminarproducto|verpago|borrarpago|verificarreferido|rechazarreferido|verpuntosusuario|asignar)_\d+'),
         handle_dynamic_commands
     ))
         
-    # Quinto: Handlers de botones
+    # UNDÉCIMO: Handlers de botones
     application.add_handler(CallbackQueryHandler(handle_asignacion_puntos, pattern=r'^puntos_.*'))
     application.add_handler(CallbackQueryHandler(button_handler_asignacion, pattern=r'^asignar_.*'))
     application.add_handler(CallbackQueryHandler(button_handler_puntos, pattern=r'^(compartir_codigo|ver_mis_puntos|ir_a_referidos|actualizar_puntos)$'))
+    
+    # 🆕 Handlers de botones para nuevos sistemas
+    application.add_handler(CallbackQueryHandler(
+        button_handler_contadores, 
+        pattern=r'^(avanzar_forzar|reanudar_y_avanzar)_'
+    ))
+    
+    application.add_handler(CallbackQueryHandler(
+        button_handler_config_semanas,
+        pattern=r'^(config_usuario|config_semanas|config_personalizado|reiniciar_semanas|mantener_semanas|cancelar_config)'
+    ))
+    
+    # Handler general de botones (mantener al final)
     application.add_handler(CallbackQueryHandler(button_handler))
     
-    # Sexto: Handler para mensajes normales (DEBE IR AL FINAL)
+    # DUODÉCIMO: Handler para mensajes normales (DEBE IR AL FINAL)
     application.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND,
         handle_message
     ))
     
-    # Séptimo: Handlers de archivos
+    # TRIGÉSIMO: Handlers de archivos
     application.add_handler(MessageHandler(filters.PHOTO, handle_image))
     application.add_handler(MessageHandler(filters.Document.IMAGE, handle_image))
     application.add_handler(MessageHandler(filters.Document.ALL, handle_all_documents))
     
-    # ✅ AGREGAR JOB PARA INCREMENTO AUTOMÁTICO
-    try:
-        if hasattr(application, 'job_queue') and application.job_queue is not None:
-            application.job_queue.run_repeating(
-                incrementar_semanas_automatico, 
-                interval=604800,  # 7 días en segundos
-                first=10  # Empezar después de 10 segundos
-            )
-            print("✅ JobQueue configurado correctamente para incremento automático")
-            job_queue_status = "ACTIVADO (cada 7 días)"
-        else:
-            print("⚠️ JobQueue no disponible. El incremento automático no funcionará.")
-            job_queue_status = "NO DISPONIBLE"
-    except Exception as e:
-        print(f"❌ Error al configurar JobQueue: {e}")
-        job_queue_status = "ERROR EN CONFIGURACIÓN"
+    # ⚠️ IMPORTANTE: ELIMINAR JOB DE INCREMENTO AUTOMÁTICO
+    # ❌ NO configurar job_queue - El admin controla manualmente
+    print("✅ Sistema configurado - Contadores individuales por usuario")
+    print("✅ Admin controla manualmente los avances")
     
     # ✅ Manejo de errores
     application.add_error_handler(error_handler)
     
-    print("✅ BOT CONFIGURADO CORRECTAMENTE")
-    print(f"🔄 INCREMENTO AUTOMÁTICO: {job_queue_status}")
+    print("✅ BOT CONFIGURADO CORRECTAMENTE CON SISTEMA INDIVIDUAL")
     
     # 3. Iniciar Flask en un hilo separado (para Render)
     print("🌐 Iniciando servidor web Flask en segundo plano...")
@@ -4658,31 +5546,39 @@ def main():
     
     # 4. Iniciar el bot en el HILO PRINCIPAL
     print("\n" + "="*60)
-    print("🤖 BOT DE PLANES DE PAGO - SISTEMA COMPLETO CON PUNTOS")
+    print("🤖 BOT DE PLANES DE PAGO - SISTEMA INDIVIDUAL POR USUARIO")
     print("="*60)
     print("📍 COMANDOS PARA USUARIOS:")
     print("   /start - Registrarse en el sistema")
     print("   /catalogo - Ver productos (solo lectura)")
-    print("   /misplanes - Ver plan asignado")
+    print("   /misplanes - Ver plan asignado con contador individual")
     print("   /miperfil - Información personal")
     print("   /mispuntos - Sistema de puntos")
     print("   /referidos - Invitar amigos")
     print("   /pagarealizado - Registrar pago")
     print("   /mistatus - Estado de mis pagos")
     print("\n📍 COMANDOS PARA ADMIN (5908252094, 7228946245, 1074083869):")
+    print("   🔄 CONTROL DE CONTADORES:")
+    print("   /vercontadores - Ver todos los contadores")
+    print("   /avanzar_ID - Avanzar usuario específico")
+    print("   /pausar_ID - Pausar usuario específico")
+    print("   /reanudar_ID - Reanudar usuario específico")
+    print("   /avanzartodos - Avanzar TODOS los activos")
+    print("   /pausartodos - Pausar TODOS")
+    print("   /reanudartodos - Reanudar TODOS")
+    print("\n   ⚙️ CONFIGURACIÓN DE SEMANAS:")
+    print("   /configurarbusqueda - Buscar usuario para configurar")
+    print("   /configurarsemanas_ID N - Cambiar semanas de usuario")
+    print("   /verconfiguraciones - Ver todas las configuraciones")
+    print("   /configurarsemanasdefault - Semanas por defecto")
+    print("\n   📊 ADMINISTRACIÓN GENERAL:")
     print("   /verasignaciones - Ver todas las asignaciones")
-    print("   /asignar_X - Asignar productos a usuario")
+    print("   /asignar - Buscar usuario para asignar productos")
     print("   /adminverproductos - Ver catálogo completo")
     print("   /adminagregarproducto - Agregar producto")
     print("   /verpagos - Ver pagos pendientes")
     print("   /verpagostodos - Ver TODOS los pagos")
     print("   /verusuarios - Ver todos los usuarios")
-    print("   /estadocontador - Estado del sistema")
-    print("   /pausarcontador - Pausar contador global")
-    print("   /reanudarcontador - Reanudar contador global")
-    print("   /configurarsemanas - Configurar semanas")
-    print("   /incrementarsemana - Incremento manual")
-    print("   /forzarincremento - Forzar incremento")
     print("   /rankingpuntos - Ranking de puntos")
     print("   /verreferidos - Referidos pendientes")
     print("   /verpuntosusuario_ID - Puntos de usuario")
@@ -4690,9 +5586,11 @@ def main():
     print("="*60 + "\n")
     
     print("🟢 BOT INICIADO - Escuchando mensajes...")
-    print("📍 Los usuarios pueden escribir /start al bot")
+    print("\n📍 Sistema: Contadores INDIVIDUALES por usuario")
+    print("📍 Admin controla manualmente los avances individuales")
     print("📍 Servicio web activo en: https://bot-sususemanal.onrender.com")
-    
+    print("\n📌 USO: /avanzartodos - Avanzar a TODOS los usuarios activos")
+        
     try:
         application.run_polling()
     except KeyboardInterrupt:
@@ -4726,16 +5624,4 @@ if __name__ == "__main__":
     # Ejecutar el bot en el HILO PRINCIPAL (esto es crucial)
     print("🤖 Iniciando bot en hilo principal...")
     main()
-
-
-
-
-
-
-
-
-
-
-
-
 
