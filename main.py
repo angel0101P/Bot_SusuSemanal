@@ -4936,6 +4936,51 @@ async def button_handler_config_semanas(update: Update, context: ContextTypes.DE
     
     elif data.startswith("cancelar_config_"):
         await query.edit_message_text("❌ **Configuración cancelada**")
+
+    elif data.startswith("config_personalizado_"):
+        user_id = int(data.split('_')[2])
+        
+        # Guardar en contexto que estamos esperando entrada personalizada
+        context.user_data[f'config_personalizado_{user_id}'] = {
+            'user_id': user_id,
+            'admin_id': query.from_user.id
+        }
+        
+        # Obtener información del usuario para mostrar
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT u.first_name, u.last_name, p.semanas, p.semanas_completadas, p.total
+            FROM planes_pago p
+            LEFT JOIN usuarios u ON p.user_id = u.user_id
+            WHERE p.user_id = %s AND p.estado = 'activo'
+        """, (user_id,))
+        
+        plan = cursor.fetchone()
+        conn.close()
+        
+        if not plan:
+            await query.edit_message_text("❌ Usuario no encontrado")
+            return
+        
+        first_name, last_name, semanas, semanas_comp, total = plan
+        nombre_completo = f"{first_name or ''} {last_name or ''}".strip()
+        pago_actual = total / semanas if semanas > 0 else 0
+        
+        mensaje = f"✏️ **CONFIGURAR SEMANAS PERSONALIZADAS**\n\n"
+        mensaje += f"👤 **Usuario:** {nombre_completo}\n"
+        mensaje += f"🆔 **ID:** {user_id}\n\n"
+        mensaje += f"📊 **CONFIGURACIÓN ACTUAL:**\n"
+        mensaje += f"• 📅 Semanas totales: {semanas}\n"
+        mensaje += f"• 📈 Semanas completadas: {semanas_comp}\n"
+        mensaje += f"• 💰 Pago semanal: ${pago_actual:.2f}\n"
+        mensaje += f"• 💵 Total del plan: ${total:.2f}\n\n"
+        mensaje += f"📝 **Envía el número de semanas deseado:**\n"
+        mensaje += "(Ejemplo: 6, 15, 24, etc.)\n"
+        mensaje += "📌 **Rango recomendado:** 1 a 52 semanas\n\n"
+        mensaje += "ℹ️ El pago semanal se recalculará automáticamente."
+        
+        await query.edit_message_text(mensaje)
     
     elif data == "cancelar_config_busqueda":
         await query.edit_message_text("❌ **Búsqueda cancelada**")
@@ -5492,7 +5537,108 @@ async def mostrar_opciones_semanas(update: Update, context: ContextTypes.DEFAULT
     else:
         await update.message.reply_text(mensaje, reply_markup=reply_markup)
 
-
+async def aplicar_configuracion_semanas_directa(update, context, user_id, nuevas_semanas):
+    """Aplica configuración directa desde entrada de texto"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Obtener información actual del usuario
+        cursor.execute("""
+            SELECT p.id, p.semanas, p.semanas_completadas, p.total,
+                   u.first_name, u.last_name, p.contador_pausado
+            FROM planes_pago p
+            LEFT JOIN usuarios u ON p.user_id = u.user_id
+            WHERE p.user_id = %s AND p.estado = 'activo'
+        """, (user_id,))
+        
+        plan = cursor.fetchone()
+        
+        if not plan:
+            await update.message.reply_text("❌ Usuario no encontrado o no tiene plan activo")
+            conn.close()
+            return
+        
+        plan_id, semanas_actuales, semanas_comp, total, first_name, last_name, contador_pausado = plan
+        nombre_completo = f"{first_name or ''} {last_name or ''}".strip()
+        
+        # Verificar conflicto (semanas completadas > nuevas semanas)
+        if semanas_comp > nuevas_semanas:
+            # Necesitamos manejar este conflicto
+            keyboard = [
+                [InlineKeyboardButton("✅ Sí, reiniciar progreso a 0", 
+                    callback_data=f"reiniciar_semanas_{user_id}_{nuevas_semanas}")],
+                [InlineKeyboardButton("🔄 Mantener progreso actual", 
+                    callback_data=f"mantener_semanas_{user_id}_{nuevas_semanas}_{semanas_comp}")],
+                [InlineKeyboardButton("❌ Cancelar configuración", 
+                    callback_data=f"cancelar_config_{user_id}")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            mensaje = f"⚠️ **CONFLICTO DE PROGRESO**\n\n"
+            mensaje += f"👤 **Usuario:** {nombre_completo}\n"
+            mensaje += f"📊 **Progreso actual:** {semanas_comp}/{semanas_actuales}\n"
+            mensaje += f"🎯 **Nuevas semanas totales:** {nuevas_semanas}\n\n"
+            mensaje += f"❌ **El usuario ya completó más semanas ({semanas_comp}) de las que intentas configurar ({nuevas_semanas}).**\n\n"
+            mensaje += f"¿Qué deseas hacer?"
+            
+            await update.message.reply_text(mensaje, reply_markup=reply_markup)
+            conn.close()
+            return
+        
+        # Calcular nuevo pago semanal
+        nuevo_pago_semanal = total / nuevas_semanas if nuevas_semanas > 0 else 0
+        
+        # Actualizar configuración
+        cursor.execute("""
+            UPDATE planes_pago 
+            SET semanas = %s,
+                pago_semanal = %s,
+                fecha_configuracion = CURRENT_TIMESTAMP
+            WHERE id = %s
+        """, (nuevas_semanas, nuevo_pago_semanal, plan_id))
+        
+        conn.commit()
+        conn.close()
+        
+        # Construir mensaje de confirmación
+        mensaje = f"✅ **CONFIGURACIÓN PERSONALIZADA APLICADA**\n\n"
+        mensaje += f"👤 **Usuario:** {nombre_completo}\n"
+        mensaje += f"🆔 **ID:** {user_id}\n\n"
+        mensaje += f"📊 **CAMBIO REALIZADO:**\n"
+        mensaje += f"• 📅 Semanas anteriores: {semanas_actuales}\n"
+        mensaje += f"• 📅 Nuevas semanas: {nuevas_semanas}\n"
+        mensaje += f"• 💰 Pago anterior: ${total/semanas_actuales:.2f}/semana\n"
+        mensaje += f"• 💰 Nuevo pago: ${nuevo_pago_semanal:.2f}/semana\n"
+        mensaje += f"• 📈 Progreso mantiene: {semanas_comp}/{nuevas_semanas}\n"
+        
+        if contador_pausado:
+            mensaje += f"• ⏸️ **Estado contador:** PAUSADO\n"
+        
+        mensaje += f"\n📞 **El usuario ha sido notificado.**"
+        
+        await update.message.reply_text(mensaje)
+        
+        # Notificar al usuario
+        try:
+            estado_contador = "⏸️ PAUSADO" if contador_pausado else "🟢 ACTIVO"
+            
+            mensaje_usuario = f"⚙️ **CONFIGURACIÓN ACTUALIZADA**\n\n"
+            mensaje_usuario += f"El administrador ha modificado tu plan de pago:\n\n"
+            mensaje_usuario += f"📅 **Nuevas semanas totales:** {nuevas_semanas}\n"
+            mensaje_usuario += f"💰 **Nuevo pago semanal:** ${nuevo_pago_semanal:.2f}\n"
+            mensaje_usuario += f"📊 **Progreso actual:** {semanas_comp}/{nuevas_semanas}\n"
+            mensaje_usuario += f"⏰ **Estado contador:** {estado_contador}\n\n"
+            mensaje_usuario += f"📋 Ver detalles: /misplanes\n"
+            mensaje_usuario += f"❓ Consultas: Contacta al administrador"
+            
+            await context.bot.send_message(chat_id=user_id, text=mensaje_usuario)
+        except Exception as e:
+            print(f"❌ No se pudo notificar al usuario {user_id}: {e}")
+        
+    except Exception as e:
+        print(f"❌ Error en aplicar_configuracion_semanas_directa: {e}")
+        await update.message.reply_text("❌ Error al aplicar la configuración personalizada")
 
 # =============================================
 # FUNCIÓN MAIN
@@ -5592,13 +5738,25 @@ def main():
         handle_dynamic_commands
     ))
     
-    # 🚨 4. CUARTO: Handler para mensajes normales
+    # 🚨 4. CUARTO: Handler específico para semanas personalizadas (DEBE IR ANTES del handler general)
+    application.add_handler(MessageHandler(
+        filters.TEXT & ~filters.COMMAND & filters.User(ADMIN_IDS),  # Solo para admins
+        handle_semanas_personalizadas
+    ))
+    
+    # 🚨 5. QUINTO: Handler para mensajes normales (DEBE IR DESPUÉS del específico)
     application.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND,
         handle_message
     ))
     
-    # 🚨 5. QUINTO: Handlers de archivos
+    # 🚨 6. SEXTO: Handler específico para puntos personalizados (DEBE IR ANTES del handler general)
+    application.add_handler(MessageHandler(
+        filters.TEXT & ~filters.COMMAND & filters.User(ADMIN_IDS),  # Solo para admins
+        handle_puntos_personalizados
+    ))
+    
+    # 🚨 7. SÉPTIMO: Handlers de archivos
     application.add_handler(MessageHandler(filters.PHOTO, handle_image))
     application.add_handler(MessageHandler(filters.Document.IMAGE, handle_image))
     application.add_handler(MessageHandler(filters.Document.ALL, handle_all_documents))
@@ -5700,7 +5858,6 @@ if __name__ == "__main__":
     # Ejecutar el bot en el HILO PRINCIPAL (esto es crucial)
     print("🤖 Iniciando bot en hilo principal...")
     main()
-
 
 
 
